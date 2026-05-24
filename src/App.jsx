@@ -4385,7 +4385,25 @@ L'objet JSON doit respecter rigoureusement cette structure :
   const [isLaunchingAutomation, setIsLaunchingAutomation] = useState(false);
 
   const [showAutomationModal, setShowAutomationModal] = useState(false);
-  const [automationError, setAutomationError] = useState(null);
+  const [automationError, setAutomationError] = useState(null);
+
+  const [showScrollTop, setShowScrollTop] = useState(false);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      if (window.scrollY > 400) {
+        setShowScrollTop(true);
+      } else {
+        setShowScrollTop(false);
+      }
+    };
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  const scrollToTop = () => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
   const [automationPlatform, setAutomationPlatform] = useState('n8n');
 
@@ -4601,186 +4619,474 @@ L'objet JSON doit respecter rigoureusement cette structure :
 
   };
 
-  const generateN8nWorkflow = (scen) => {
-
-    const nodes = [
-
-      {
-
-        parameters: {},
-
-        id: "start-node-id",
-
-        name: "Début Scénario AURA",
-
-        type: "n8n-nodes-base.manualTrigger",
-
-        typeVersion: 1,
-
-        position: [100, 300]
-
-      }
-
-    ];
-
-    const connections = {};
-
-    let previousNodeName = "Début Scénario AURA";
-
-    let xPosition = 300;
-
-    scen.steps.forEach((step, index) => {
-
-      const toolName = String(step.tool || '');
-
-      const nodeName = `${toolName.replace(/[^a-zA-Z0-9\s]/g, '')} - Etape ${index + 1}`;
-
-      let nodeType = "n8n-nodes-base.httpRequest";
-
-      let parameters = {
-
-        url: "https://api.gemini.com/v1/chat",
-
-        method: "POST",
-
-        sendBody: true,
-
-        specifyBody: "json",
-
-        jsonParameters: true
-
-      };
-
-      if (toolName.toLowerCase().includes("gemini") || toolName.toLowerCase().includes("gpt") || toolName.toLowerCase().includes("claude") || toolName.toLowerCase().includes("ia")) {
-
-        nodeType = "n8n-nodes-base.openAi";
-
-        parameters = {
-
-          model: "gpt-4o",
-
-          prompt: step.action,
-
-          options: {
-
-            temperature: 0.7
-
-          }
-
-        };
-
-      } else if (toolName.toLowerCase().includes("webhook") || toolName.toLowerCase().includes("make")) {
-
-        nodeType = "n8n-nodes-base.webhook";
-
-        parameters = {
-
-          path: `aura-webhook-${scen.id}`,
-
-          options: {}
-
-        };
-
-      }
-
-      nodes.push({
-
-        parameters,
-
-        id: `node-${step.id}-${index}`,
-
-        name: nodeName,
-
-        type: nodeType,
-
-        typeVersion: 1,
-
-        position: [xPosition, 300]
-
-      });
-
-      if (!connections[previousNodeName]) {
-
-        connections[previousNodeName] = {
-
-          main: [[]]
-
-        };
-
-      }
-
-      connections[previousNodeName].main[0].push({
-
-        node: nodeName,
-
-        type: "main",
-
-        index: 0
-
-      });
-
-      previousNodeName = nodeName;
-
-      xPosition += 220;
-
-    });
-
-    return JSON.stringify({ nodes, connections }, null, 2);
-
-  };
-
-  const generateMakeBlueprint = (scen) => {
-
-    const flow = scen.steps.map((step, index) => {
-
-      return {
-
-        id: index + 1,
-
-        module: "gateway:custom-webhook",
-
-        params: {
-
-          action: step.action,
-
-          tool: step.tool
-
-        },
-
-        metadata: {
-
-          designer: {
-
-            x: index * 150,
-
-            y: 0
-
-          }
-
-        }
-
-      };
-
-    });
-
-    
-
-    return JSON.stringify({
-
-      name: `AURA - ${scen.name}`,
-
-      flow: flow,
-
-      metadata: {
-
-        version: 1
-
-      }
-
-    }, null, 2);
-
-  };
-
+  const getN8nNodeConfig = (step, index) => {
+    const tool = String(step.tool || '').toLowerCase();
+    const action = String(step.action || '').toLowerCase();
+
+    // Default configuration (HTTP Request)
+    let type = "n8n-nodes-base.httpRequest";
+    let typeVersion = 4.1;
+    let parameters = {
+      url: "https://api.example.com/v1/action",
+      method: "POST",
+      sendBody: true,
+      specifyBody: "json",
+      jsonParameters: true,
+      bodyParameters: {
+        parameters: [
+          { name: "action", value: step.action }
+        ]
+      }
+    };
+
+    // 1. OpenAI / Gemini / Claude / DeepSeek / IA / LLM
+    if (tool.includes("openai") || tool.includes("gpt") || tool.includes("gemini") || tool.includes("claude") || tool.includes("deepseek") || tool.includes("ia") || tool.includes("assistant")) {
+      type = "n8n-nodes-base.openAi";
+      typeVersion = 1.1;
+      parameters = {
+        resource: "chat",
+        operation: "create",
+        model: tool.includes("gemini") ? "gemini-1.5-pro" : tool.includes("deepseek") ? "deepseek-reasoner" : "gpt-4o",
+        messages: {
+          messageValues: [
+            {
+              role: "system",
+              message: "Tu es un assistant IA spécialisé. Exécute l'action demandée."
+            },
+            {
+              role: "user",
+              message: step.action
+            }
+          ]
+        },
+        options: {
+          temperature: 0.7
+        }
+      };
+    }
+    // 2. Google Sheets
+    else if (tool.includes("sheet") || tool.includes("tableur")) {
+      type = "n8n-nodes-base.googleSheets";
+      typeVersion = 4;
+      const isRead = action.includes("lire") || action.includes("extraire") || action.includes("chercher") || action.includes("trouver") || action.includes("récupérer");
+      parameters = {
+        resource: "spreadsheet",
+        operation: isRead ? "read" : "appendRow",
+        spreadsheetId: {
+          __rl: true,
+          value: "ID_DE_VOTRE_FEUILLE_GOOGLE",
+          mode: "id"
+        },
+        sheetName: {
+          __rl: true,
+          value: "Feuille 1",
+          mode: "name"
+        },
+        options: {}
+      };
+    }
+    // 3. Gmail / Google Email / E-mail / Outlook / Email
+    else if (tool.includes("email") || tool.includes("gmail") || tool.includes("mail") || tool.includes("courriel")) {
+      type = "n8n-nodes-base.gmail";
+      typeVersion = 2;
+      const isSend = action.includes("envoyer") || action.includes("répondre") || action.includes("expédier") || action.includes("send");
+      parameters = {
+        resource: "message",
+        operation: isSend ? "send" : "getAll",
+        emailAs: "text",
+        ...(isSend ? {
+          subject: "[AURA] Suivi automatique",
+          emailType: "text",
+          message: step.action,
+          to: ["destinataire@example.com"]
+        } : {
+          limit: 10,
+          simple: true
+        })
+      };
+    }
+    // 4. Slack / Mou
+    else if (tool.includes("slack") || tool.includes("mou")) {
+      type = "n8n-nodes-base.slack";
+      typeVersion = 2;
+      parameters = {
+        resource: "message",
+        operation: "post",
+        select: "channel",
+        channelId: {
+          __rl: true,
+          value: "general",
+          mode: "name"
+        },
+        messageType: "text",
+        text: `[AURA] Alerte de workflow :\n${step.action}`
+      };
+    }
+    // 5. Telegram / Télégramme
+    else if (tool.includes("telegram") || tool.includes("télégramme")) {
+      type = "n8n-nodes-base.telegram";
+      typeVersion = 1;
+      parameters = {
+        resource: "message",
+        operation: "sendMessage",
+        chatId: "CHAT_ID",
+        text: `[AURA] Notification :\n${step.action}`
+      };
+    }
+    // 6. Notion
+    else if (tool.includes("notion")) {
+      type = "n8n-nodes-base.notion";
+      typeVersion = 2;
+      parameters = {
+        resource: "databasePage",
+        operation: "create",
+        databaseId: {
+          __rl: true,
+          value: "DATABASE_ID",
+          mode: "id"
+        },
+        properties: {
+          propertyValues: [
+            {
+              key: "Name",
+              title: step.action
+            }
+          ]
+        }
+      };
+    }
+    // 7. Airtable
+    else if (tool.includes("airtable")) {
+      type = "n8n-nodes-base.airtable";
+      typeVersion = 2;
+      parameters = {
+        resource: "record",
+        operation: "append",
+        application: {
+          __rl: true,
+          value: "APP_ID",
+          mode: "id"
+        },
+        table: {
+          __rl: true,
+          value: "TABLE_NAME",
+          mode: "name"
+        },
+        columns: {
+          columnValues: [
+            {
+              fieldName: "Notes",
+              fieldValue: step.action
+            }
+          ]
+        }
+      };
+    }
+    // 8. Shopify
+    else if (tool.includes("shopify")) {
+      type = "n8n-nodes-base.shopify";
+      typeVersion = 1;
+      parameters = {
+        resource: "order",
+        operation: "get",
+        orderId: "ORDER_ID"
+      };
+    }
+    // 9. Webhook / Forms trigger
+    else if (tool.includes("webhook") || tool.includes("forms") || tool.includes("formulaire") || tool.includes("porte")) {
+      type = "n8n-nodes-base.webhook";
+      typeVersion = 2;
+      parameters = {
+        path: `aura-webhook-node-${index}`,
+        httpMethod: "POST",
+        responseMode: "onReceived",
+        options: {}
+      };
+    }
+    // 10. ActiveCampaign
+    else if (tool.includes("activecampaign")) {
+      type = "n8n-nodes-base.activeCampaign";
+      typeVersion = 1;
+      parameters = {
+        resource: "contact",
+        operation: "create",
+        email: "email@example.com",
+        firstName: "Client",
+        lastName: "AURA"
+      };
+    }
+    // 11. Twilio
+    else if (tool.includes("twilio") || tool.includes("sms")) {
+      type = "n8n-nodes-base.twilio";
+      typeVersion = 1;
+      parameters = {
+        resource: "sms",
+        operation: "send",
+        from: "SENDER_NUMBER",
+        to: "RECIPIENT_NUMBER",
+        message: step.action
+      };
+    }
+    // 12. Google Calendar / Calendrier
+    else if (tool.includes("calendar") || tool.includes("calendrier")) {
+      type = "n8n-nodes-base.googleCalendar";
+      typeVersion = 2;
+      parameters = {
+        resource: "event",
+        operation: "create",
+        calendarId: {
+          __rl: true,
+          value: "primary",
+          mode: "id"
+        },
+        start: "={{ $now }}",
+        end: "={{ $now.plus({hours: 1}) }}",
+        summary: "Rendez-vous AURA",
+        description: step.action
+      };
+    }
+    // 13. Google Drive / Drive
+    else if (tool.includes("drive")) {
+      type = "n8n-nodes-base.googleDrive";
+      typeVersion = 3;
+      parameters = {
+        resource: "file",
+        operation: "list",
+        options: {}
+      };
+    }
+
+    return { type, typeVersion, parameters };
+  };
+
+  const getMakeModuleConfig = (step, index) => {
+    const tool = String(step.tool || '').toLowerCase();
+    const action = String(step.action || '').toLowerCase();
+
+    // Default configuration
+    let module = "gateway:custom-webhook";
+    let mapper = {
+      action: step.action,
+      tool: step.tool
+    };
+
+    // 1. Gmail / Google Email
+    if (tool.includes("email") || tool.includes("gmail") || tool.includes("mail") || tool.includes("courriel")) {
+      const isSend = action.includes("envoyer") || action.includes("répondre") || action.includes("expédier") || action.includes("send");
+      module = isSend ? "gmail:SendAnEmail" : "gmail:WatchEmails";
+      mapper = isSend ? {
+        subject: "[AURA] Suivi automatique",
+        content: step.action,
+        to: ["destinataire@example.com"]
+      } : {
+        folder: "INBOX",
+        filter: "UNREAD"
+      };
+    }
+    // 2. Google Sheets
+    else if (tool.includes("sheet") || tool.includes("tableur")) {
+      const isRead = action.includes("lire") || action.includes("extraire") || action.includes("chercher") || action.includes("trouver") || action.includes("récupérer");
+      module = isRead ? "google-sheets:SearchRows" : "google-sheets:AddARow";
+      mapper = isRead ? {
+        spreadsheetId: "SPREADSHEET_ID",
+        sheetName: "Feuille 1",
+        query: step.action
+      } : {
+        spreadsheetId: "SPREADSHEET_ID",
+        sheetName: "Feuille 1",
+        values: {
+          A: "Date",
+          B: step.action
+        }
+      };
+    }
+    // 3. Slack
+    else if (tool.includes("slack") || tool.includes("mou")) {
+      module = "slack:CreateAMessage";
+      mapper = {
+        channel: "general",
+        text: `[AURA] Notification :\n${step.action}`
+      };
+    }
+    // 4. Telegram
+    else if (tool.includes("telegram") || tool.includes("télégramme")) {
+      module = "telegram:SendMessage";
+      mapper = {
+        chatId: "CHAT_ID",
+        text: `[AURA] Notification :\n${step.action}`
+      };
+    }
+    // 5. Notion
+    else if (tool.includes("notion")) {
+      module = "notion:CreateAPage";
+      mapper = {
+        databaseId: "DATABASE_ID",
+        properties: {
+          Name: step.action
+        }
+      };
+    }
+    // 6. Airtable
+    else if (tool.includes("airtable")) {
+      module = "airtable:CreateARecord";
+      mapper = {
+        baseId: "BASE_ID",
+        tableId: "TABLE_NAME",
+        fields: {
+          Notes: step.action
+        }
+      };
+    }
+    // 7. Shopify
+    else if (tool.includes("shopify")) {
+      module = "shopify:WatchOrders";
+      mapper = {
+        status: "any"
+      };
+    }
+    // 8. OpenAI / GPT / LLMs
+    else if (tool.includes("openai") || tool.includes("gpt") || tool.includes("gemini") || tool.includes("claude") || tool.includes("deepseek") || tool.includes("ia")) {
+      module = "openai:CreateACompletion";
+      mapper = {
+        model: "gpt-4o",
+        messages: [
+          {
+            role: "user",
+            content: step.action
+          }
+        ]
+      };
+    }
+    // 9. Twilio
+    else if (tool.includes("twilio") || tool.includes("sms")) {
+      module = "twilio:SendSMS";
+      mapper = {
+        from: "SENDER_NUMBER",
+        to: "RECIPIENT_NUMBER",
+        message: step.action
+      };
+    }
+    // 10. Google Calendar / Calendrier
+    else if (tool.includes("calendar") || tool.includes("calendrier")) {
+      module = "google-calendar:CreateAnEvent";
+      mapper = {
+        calendarId: "primary",
+        summary: "Rendez-vous AURA",
+        description: step.action,
+        startDate: "{{now}}",
+        duration: 60
+      };
+    }
+
+    return { module, mapper };
+  };
+
+  const generateN8nWorkflow = (scen) => {
+    const firstStepTool = String(scen.steps[0]?.tool || '').toLowerCase();
+    const firstStepAction = String(scen.steps[0]?.action || '').toLowerCase();
+    
+    const isFirstStepEventDriven = 
+      firstStepTool.includes("webhook") || 
+      firstStepTool.includes("porte") || 
+      firstStepTool.includes("forms") ||
+      firstStepAction.includes("détecter") || 
+      firstStepAction.includes("réceptionner") || 
+      firstStepAction.includes("recevoir") ||
+      firstStepAction.includes("quand") || 
+      firstStepAction.includes("lors de");
+
+    const nodes = [];
+    const connections = {};
+    let previousNodeName = "";
+    let xPosition = 100;
+
+    if (isFirstStepEventDriven) {
+      const triggerPath = `aura-webhook-trigger-${scen.id}`;
+      nodes.push({
+        parameters: {
+          path: triggerPath,
+          options: {}
+        },
+        id: "start-node-id",
+        name: "Déclencheur Webhook AURA",
+        type: "n8n-nodes-base.webhook",
+        typeVersion: 2,
+        position: [xPosition, 300]
+      });
+      previousNodeName = "Déclencheur Webhook AURA";
+      xPosition += 220;
+    } else {
+      nodes.push({
+        parameters: {},
+        id: "start-node-id",
+        name: "Début Scénario AURA",
+        type: "n8n-nodes-base.manualTrigger",
+        typeVersion: 1,
+        position: [xPosition, 300]
+      });
+      previousNodeName = "Début Scénario AURA";
+      xPosition += 220;
+    }
+
+    scen.steps.forEach((step, index) => {
+      const toolName = String(step.tool || '');
+      const nodeName = `${toolName.replace(/[^a-zA-Z0-9\s]/g, '')} - Etape ${index + 1}`;
+      
+      const config = getN8nNodeConfig(step, index);
+
+      nodes.push({
+        parameters: config.parameters,
+        id: `node-${step.id}-${index}`,
+        name: nodeName,
+        type: config.type,
+        typeVersion: config.typeVersion,
+        position: [xPosition, 300]
+      });
+
+      if (!connections[previousNodeName]) {
+        connections[previousNodeName] = {
+          main: [[]]
+        };
+      }
+
+      connections[previousNodeName].main[0].push({
+        node: nodeName,
+        type: "main",
+        index: 0
+      });
+
+      previousNodeName = nodeName;
+      xPosition += 220;
+    });
+
+    return JSON.stringify({ nodes, connections }, null, 2);
+  };
+
+  const generateMakeBlueprint = (scen) => {
+    const flow = scen.steps.map((step, index) => {
+      const config = getMakeModuleConfig(step, index);
+      return {
+        id: index + 1,
+        module: config.module,
+        params: config.mapper,
+        metadata: {
+          designer: {
+            x: index * 150,
+            y: 0
+          }
+        }
+      };
+    });
+    
+    return JSON.stringify({
+      name: `AURA - ${scen.name}`,
+      flow: flow,
+      metadata: {
+        version: 1
+      }
+    }, null, 2);
+  };
+
   const handleLaunchAutomationPipeline = async () => {
     if (!activeScenario) return;
     setIsLaunchingAutomation(true);
@@ -5071,7 +5377,9 @@ L'objet JSON doit respecter rigoureusement cette structure :
 
           {/* Navigation Links */}
 
-          <nav className="flex flex-wrap items-center justify-center gap-1.5 bg-slate-900/80 p-1.5 rounded-xl border border-slate-800/60">
+          <div className="w-full lg:w-auto overflow-x-auto scrollbar-none py-1.5 flex justify-center">
+
+          <nav className="flex flex-nowrap lg:flex-wrap items-center gap-1.5 bg-slate-900/80 p-1.5 rounded-xl border border-slate-800/60 whitespace-nowrap min-w-max lg:min-w-0">
 
             {[
 
@@ -5127,7 +5435,9 @@ L'objet JSON doit respecter rigoureusement cette structure :
 
             ))}
 
-          </nav>
+          </nav>
+
+          </div>
 
           {/* Google OAuth Connection badge */}
 
@@ -7074,7 +7384,17 @@ L'objet JSON doit respecter rigoureusement cette structure :
 
                 )}
 
-              </div>
+          
+      {showScrollTop && (
+        <button
+          onClick={scrollToTop}
+          className={`fixed bottom-6 left-6 z-40 p-3 rounded-xl bg-slate-900 border ${theme.borderMuted} hover:${theme.border} text-slate-350 hover:text-white transition-all shadow-xl backdrop-blur-md animate-fadeIn`}
+          aria-label="Retour en haut"
+        >
+          <ArrowUp className="w-5 h-5" />
+        </button>
+      )}
+    </div>
 
               <div>
 
