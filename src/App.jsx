@@ -6336,7 +6336,8 @@ L'objet JSON doit respecter rigoureusement cette structure :
 
                 onClick={() => {
 
-                  const targetUrl = automationPlatform === 'make' ? 'https://www.make.com/en/login' : 'http://localhost:5678/';
+                  const configuredN8nUrl = (apiKeys["n8n_url"] || "http://localhost:5678").replace(/\/$/, "");
+                  const targetUrl = automationPlatform === 'make' ? 'https://www.make.com/en/login' : `${configuredN8nUrl}/`;
 
                   window.open(targetUrl, '_blank');
 
