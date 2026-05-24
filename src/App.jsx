@@ -1474,7 +1474,7 @@ Restons en contact pour configurer votre essai gratuit de 14 jours !`;
     return { tool: detectedTool, action: text };
   };
 
-  const processAntigravityCommand = (cmdText) => {
+  const processAntigravityCommand = async (cmdText) => {
     if (!cmdText.trim()) return;
     
     const userMsg = { sender: 'user', text: cmdText };
@@ -1482,95 +1482,109 @@ Restons en contact pour configurer votre essai gratuit de 14 jours !`;
     setAntigravityCommandInput('');
     
     const text = cmdText.toLowerCase();
-    let reply = "Désolé, je n'ai pas pu décoder cette commande d'orchestration. Vous pouvez me demander de naviguer dans l'interface, changer le thème, configurer des clés d'API ou connecter vos serveurs MCP.";
+    let reply = null;
+    let actionTaken = false;
     
     // 1. Navigation Commands
     if (text.includes("onglet") || text.includes("va sur") || text.includes("affiche") || text.includes("montre") || text.includes("ouvre")) {
       if (text.includes("réglage") || text.includes("setting") || text.includes("configuration")) {
         setActiveTab('settings');
         reply = "Fait ! J'ai ouvert l'onglet des configurations et réglages.";
+        actionTaken = true;
       } else if (text.includes("scénario") || text.includes("scenario") || text.includes("flux")) {
         setActiveTab('scenarios');
         reply = "Fait ! J'ai ouvert l'onglet des scénarios et automatisation.";
+        actionTaken = true;
       } else if (text.includes("client")) {
         setActiveTab('clients');
         reply = "Fait ! J'ai ouvert l'onglet de gestion des clients.";
+        actionTaken = true;
       } else if (text.includes("profil") || text.includes("gmb")) {
         setActiveTab('profiles');
         reply = "Fait ! J'ai ouvert l'onglet des profils Google My Business.";
+        actionTaken = true;
       } else if (text.includes("catalogue") || text.includes("outil")) {
         setActiveTab('catalog');
         reply = "Fait ! J'ai ouvert le catalogue des outils d'IA.";
+        actionTaken = true;
       } else if (text.includes("télémétrie") || text.includes("telemetry") || text.includes("historique")) {
         setActiveTab('telemetry');
         reply = "Fait ! J'ai ouvert l'onglet de télémétrie des exécutions.";
+        actionTaken = true;
       } else if (text.includes("roi") || text.includes("rentabilité") || text.includes("calcul")) {
         setActiveTab('roi');
         reply = "Fait ! J'ai ouvert le simulateur de ROI.";
+        actionTaken = true;
       } else if (text.includes("live") || text.includes("chat")) {
         setActiveTab('live-action');
         reply = "Fait ! J'ai ouvert le module Live Action.";
+        actionTaken = true;
       }
     }
     
     // 2. Theme Commands
-    else if (text.includes("thème") || text.includes("theme") || text.includes("couleur")) {
+    if (!actionTaken && (text.includes("thème") || text.includes("theme") || text.includes("couleur"))) {
       if (text.includes("émeraude") || text.includes("vert") || text.includes("emerald")) {
         setPrimaryBrandTheme('emerald');
         reply = "Fait ! J'ai activé le thème Émeraude.";
+        actionTaken = true;
       } else if (text.includes("violet") || text.includes("purple") || text.includes("violette")) {
         setPrimaryBrandTheme('violet');
         reply = "Fait ! J'ai activé le thème Violet.";
+        actionTaken = true;
       } else if (text.includes("rose") || text.includes("pink")) {
         setPrimaryBrandTheme('rose');
         reply = "Fait ! J'ai activé le thème Rose.";
+        actionTaken = true;
       } else if (text.includes("ambre") || text.includes("orange") || text.includes("amber")) {
         setPrimaryBrandTheme('amber');
         reply = "Fait ! J'ai activé le thème Ambre.";
+        actionTaken = true;
       } else if (text.includes("indigo") || text.includes("bleu")) {
         setPrimaryBrandTheme('indigo');
         reply = "Fait ! J'ai activé le thème Indigo.";
+        actionTaken = true;
       }
     }
     
     // 3. API Keys Config Commands
-    else if (text.includes("clé api") || text.includes("api key") || text.includes("token")) {
+    if (!actionTaken && (text.includes("clé api") || text.includes("api key") || text.includes("token"))) {
       const match = cmdText.match(/(openai|n8n|gemini|elevenlabs|bland)\s+sur\s+(.+)$/i);
       if (match) {
         const keyName = match[1].toLowerCase();
         const keyValue = match[2].trim();
         setApiKeys(prev => ({ ...prev, [keyName]: keyValue }));
         reply = `Fait ! J'ai configuré la clé API pour "${keyName}".`;
-      } else {
-        reply = "Pour définir une clé API, dites par exemple : 'définis la clé API OpenAI sur sk-...'";
+        actionTaken = true;
       }
     }
 
     // 3b. Agency Rename Command
-    else if (text.includes("agence") && (text.includes("nom") || text.includes("appelle") || text.includes("renomme") || text.includes("change"))) {
+    if (!actionTaken && text.includes("agence") && (text.includes("nom") || text.includes("appelle") || text.includes("renomme") || text.includes("change"))) {
       const match = cmdText.match(/(?:agence en|agence|l'agence)\s+([^,.]+)/i);
       if (match) {
         const newName = match[1].trim();
         setAgencyName(newName);
         reply = `Fait ! Le nom de l'agence a été modifié pour : "${newName}".`;
-      } else {
-        reply = "Pour renommer l'agence, dites par exemple : 'nomme l'agence en Super Agency'.";
+        actionTaken = true;
       }
     }
 
     // 3c. Platform Selector Command
-    else if (text.includes("plateforme") || text.includes("automation") || text.includes("n8n") || text.includes("make")) {
+    if (!actionTaken && (text.includes("plateforme") || (text.includes("automation") && (text.includes("n8n") || text.includes("make"))))) {
       if (text.includes("n8n")) {
         setAutomationPlatform('n8n');
         reply = "Fait ! La plateforme d'automatisation active est désormais n8n.";
+        actionTaken = true;
       } else if (text.includes("make")) {
         setAutomationPlatform('make');
         reply = "Fait ! La plateforme d'automatisation active est désormais Make.com.";
+        actionTaken = true;
       }
     }
     
     // 4. Client creation
-    else if (text.includes("crée un client") || text.includes("ajoute le client") || text.includes("nouveau client")) {
+    if (!actionTaken && (text.includes("crée un client") || text.includes("ajoute le client") || text.includes("nouveau client"))) {
       const match = cmdText.match(/(?:client|l'utilisateur)\s+([^,.]+)/i);
       if (match) {
         const name = match[1].trim();
@@ -1587,21 +1601,19 @@ Restons en contact pour configurer votre essai gratuit de 14 jours !`;
         };
         setClientsList(prev => [...prev, newClient]);
         reply = `Fait ! J'ai ajouté le client "${name}" dans la liste des clients.`;
-      } else {
-        reply = "Pour ajouter un client, dites par exemple : 'ajoute le client Jean Dupont'.";
+        actionTaken = true;
       }
     }
     
     // 5. MCP control
-    else if (text.includes("mcp") || text.includes("serveur")) {
+    if (!actionTaken && (text.includes("mcp") || (text.includes("serveur") && (text.includes("connecte") || text.includes("déconnecte"))))) {
       if (text.includes("connecte") || text.includes("active") || text.includes("démarre")) {
         const match = text.match(/(google|n8n|make)/i);
         if (match) {
           const serv = match[1];
           setMcpServers(prev => prev.map(s => s.name.toLowerCase().includes(serv) ? { ...s, status: 'connected' } : s));
           reply = `Fait ! Le serveur MCP pour "${serv}" a été connecté avec succès.`;
-        } else {
-          reply = "Dites 'connecte le serveur MCP Google' ou 'connecte le serveur MCP Make'.";
+          actionTaken = true;
         }
       } else if (text.includes("déconnecte") || text.includes("coupe") || text.includes("arrête")) {
         const match = text.match(/(google|n8n|make)/i);
@@ -1609,33 +1621,54 @@ Restons en contact pour configurer votre essai gratuit de 14 jours !`;
           const serv = match[1];
           setMcpServers(prev => prev.map(s => s.name.toLowerCase().includes(serv) ? { ...s, status: 'disconnected' } : s));
           reply = `Fait ! Le serveur MCP pour "${serv}" a été déconnecté.`;
+          actionTaken = true;
         }
       }
     }
     
     // 6. Launch simulation
-    else if (text.includes("simule") || text.includes("lance la simulation") || text.includes("test le flux")) {
+    if (!actionTaken && (text.includes("simule") || text.includes("lance la simulation") || text.includes("test le flux"))) {
       if (activeScenario && activeScenario.steps.length > 0) {
         runScenarioSimulation();
         reply = `Fait ! J'ai déclenché la simulation vocale du scénario : "${activeScenario.name}".`;
+        actionTaken = true;
       } else {
         reply = "Aucun scénario actif ou le scénario ne contient pas d'étapes à simuler.";
+        actionTaken = true;
       }
     }
     
     // 7. Deploy scenario
-    else if (text.includes("déploie") || text.includes("lance l'automatisation")) {
+    if (!actionTaken && (text.includes("déploie") || text.includes("lance l'automatisation"))) {
       if (activeScenario && activeScenario.steps.length > 0) {
         handleLaunchAutomationPipeline();
         reply = `Fait ! J'ai orchestré et déployé le scénario "${activeScenario.name}" vers n8n.`;
+        actionTaken = true;
       } else {
         reply = "Veuillez activer un scénario valide avant de demander un déploiement.";
+        actionTaken = true;
       }
     }
+
+    // 8. If no action matched, use Gemini AI for intelligent response
+    if (!actionTaken || reply === null) {
+      // Show typing indicator
+      const typingId = Date.now();
+      setAntigravityMessages(prev => [...prev, { sender: 'bot', text: '...', isTyping: true, id: typingId }]);
+      try {
+        const systemPrompt = `Tu es Antigravity, un chef d'orchestre d'intelligence artificielle intégré dans le logiciel Aura — une plateforme d'automatisation marketing et de gestion d'agence. Tu contrôles vocalement et textuellement tous les paramètres du logiciel Aura. Tu peux: naviguer entre les onglets (catalogue, scénarios, clients, profils, télémétrie, ROI, réglages), changer le thème de couleur, configurer des clés API, gérer les serveurs MCP, créer des clients, simuler et déployer des scénarios. Réponds toujours en français, de manière concise, professionnelle et utile. Si l'utilisateur te pose une question générale sur le logiciel ou l'IA, réponds intelligemment. Si tu détectes une intention de commande, confirme l'action et guide l'utilisateur.`;
+        const aiReply = await callGeminiAPI(cmdText, systemPrompt);
+        setAntigravityMessages(prev => prev.filter(m => !(m.isTyping && m.id === typingId)).concat([{ sender: 'bot', text: aiReply }]));
+      } catch (err) {
+        setAntigravityMessages(prev => prev.filter(m => !(m.isTyping && m.id === typingId)).concat([{ sender: 'bot', text: reply || "Je n'ai pas pu traiter cette demande. Essayez : 'affiche les réglages', 'active le thème violet', ou 'ajoute le client Dupont'." }]));
+      }
+      return;
+    }
     
+    // For matched actions, respond after brief delay
     setTimeout(() => {
       setAntigravityMessages(prev => [...prev, { sender: 'bot', text: reply }]);
-    }, 800);
+    }, 400);
   };
 
   const handleAntigravityVoiceClick = () => {
@@ -4672,6 +4705,12 @@ L'objet JSON doit respecter rigoureusement cette structure :
   const [antigravityCommandInput, setAntigravityCommandInput] = useState('');
   const [isListeningAntigravity, setIsListeningAntigravity] = useState(false);
   const [isListeningStepVoice, setIsListeningStepVoice] = useState(false);
+  const messagesEndRef = useRef(null);
+  useEffect(() => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [antigravityMessages]);
   const [mcpServers, setMcpServers] = useState([
     { name: 'Server-Google-SSO', status: 'connected', type: 'Google auth proxy' },
     { name: 'Server-n8n-Engine', status: 'connected', type: 'Workflow orchestrator' },
@@ -7884,7 +7923,7 @@ L'objet JSON doit respecter rigoureusement cette structure :
             </div>
 
             {/* Body */}
-            <div className="flex-1 overflow-y-auto p-5 space-y-5 scrollbar-thin">
+            <div className="flex-1 overflow-y-auto p-5 scrollbar-thin flex flex-col">
               {!antigravityConnected ? (
                 // Connect Screen
                 <div className="space-y-5 py-6">
@@ -7986,30 +8025,33 @@ L'objet JSON doit respecter rigoureusement cette structure :
                 </div>
               ) : (
                 // Chat and Command Execution Panel
-                <div className="h-full flex flex-col justify-between space-y-4">
+                <div className="flex-1 flex flex-col min-h-0 gap-3">
                   {/* Messages Area */}
-                  <div className="flex-1 space-y-3.5 max-h-[360px] overflow-y-auto pr-1 scrollbar-thin">
+                  <div className="flex-1 min-h-0 overflow-y-auto space-y-3 pr-1 scrollbar-thin">
                     {antigravityMessages.map((msg, idx) => (
                       <div 
-                        key={idx} 
+                        key={msg.id || idx} 
                         className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'} animate-fadeIn`}
                       >
                         <div className={`max-w-[85%] p-3 rounded-2xl text-xs leading-relaxed ${
                           msg.sender === 'user' 
                             ? 'bg-indigo-600 text-white rounded-tr-none' 
-                            : 'bg-slate-900/60 border border-slate-850 text-slate-200 rounded-tl-none'
+                            : msg.isTyping
+                              ? 'bg-slate-900/60 border border-slate-850 text-slate-400 rounded-tl-none animate-pulse'
+                              : 'bg-slate-900/60 border border-slate-850 text-slate-200 rounded-tl-none'
                         }`}>
-                          <span className="font-semibold text-[9px] block uppercase tracking-wider mb-1 font-mono text-slate-455">
+                          <span className="font-semibold text-[9px] block uppercase tracking-wider mb-1 font-mono text-slate-500">
                             {msg.sender === 'user' ? 'Vous' : 'Antigravity'}
                           </span>
-                          <span>{msg.text}</span>
+                          <span>{msg.isTyping ? '● ● ●' : msg.text}</span>
                         </div>
                       </div>
                     ))}
+                    <div ref={messagesEndRef} />
                   </div>
 
                   {/* MCP Active Servers Status */}
-                  <div className="p-3.5 bg-slate-900/40 border border-slate-850 rounded-2xl space-y-2">
+                  <div className="p-3.5 bg-slate-900/40 border border-slate-850 rounded-2xl space-y-2 mt-auto shrink-0">
                     <span className="block text-[9px] font-bold text-slate-500 uppercase tracking-wider">Liaisons MCP Connectées ({mcpServers.filter(s => s.status === 'connected').length})</span>
                     <div className="grid grid-cols-1 gap-2">
                       {mcpServers.map((s, idx) => (
