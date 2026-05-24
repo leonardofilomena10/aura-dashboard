@@ -133,15 +133,29 @@ export default function SettingsTab({
                   {/* Input Area based on Selected Method */}
                   <div className="flex-1 min-w-[240px] flex items-end">
                     {activeMethod === 'api_key' && (
-                      <div className="w-full">
-                        <label className="block text-[9px] text-slate-500 font-bold uppercase mb-1">Clé API / Token d'accès</label>
-                        <input
-                          type="password"
-                          placeholder="Entrez le jeton/token..."
-                          value={apiKeys[tool.id] || ''}
-                          onChange={(e) => handleUpdateKey(tool.id, e.target.value)}
-                          className="w-full bg-slate-950 border border-slate-850 rounded-lg px-3 py-1.5 text-slate-300 font-mono text-[10px] focus:outline-none focus:border-indigo-500/50"
-                        />
+                      <div className="w-full space-y-2">
+                        <div>
+                          <label className="block text-[9px] text-slate-500 font-bold uppercase mb-1">Clé API / Token d'accès</label>
+                          <input
+                            type="password"
+                            placeholder="Entrez le jeton/token..."
+                            value={apiKeys[tool.id] || ''}
+                            onChange={(e) => handleUpdateKey(tool.id, e.target.value)}
+                            className="w-full bg-slate-950 border border-slate-850 rounded-lg px-3 py-1.5 text-slate-300 font-mono text-[10px] focus:outline-none focus:border-indigo-500/50"
+                          />
+                        </div>
+                        {tool.id === 'n8n' && (
+                          <div>
+                            <label className="block text-[9px] text-slate-500 font-bold uppercase mb-1">URL de l'instance n8n</label>
+                            <input
+                              type="text"
+                              placeholder="Ex: http://localhost:5678 ou https://instance.n8n.cloud"
+                              value={apiKeys["n8n_url"] || ''}
+                              onChange={(e) => handleUpdateKey("n8n_url", e.target.value)}
+                              className="w-full bg-slate-950 border border-slate-850 rounded-lg px-3 py-1.5 text-slate-300 text-[10px] focus:outline-none focus:border-indigo-500/50"
+                            />
+                          </div>
+                        )}
                       </div>
                     )}
 

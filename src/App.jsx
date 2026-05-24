@@ -4814,6 +4814,96 @@ L'objet JSON doit respecter rigoureusement cette structure :
 
     
 
+    const n8nApiKey = apiKeys["n8n"];
+
+    const n8nUrl = (apiKeys["n8n_url"] || "http://localhost:5678").replace(/\/$/, "");
+
+    
+
+    if (platform === 'n8n' && n8nApiKey && n8nApiKey.trim() !== '') {
+
+      triggerToast("Tentative de déploiement direct via l'API n8n...");
+
+      try {
+
+        const parsedWorkflow = JSON.parse(generatedCode);
+
+        const response = await fetch(`${n8nUrl}/api/v1/workflows`, {
+
+          method: 'POST',
+
+          headers: {
+
+            'X-N8N-API-KEY': n8nApiKey,
+
+            'Content-Type': 'application/json'
+
+          },
+
+          body: JSON.stringify({
+
+            name: `[AURA] ${activeScenario.name}`,
+
+            nodes: parsedWorkflow.nodes,
+
+            connections: parsedWorkflow.connections,
+
+            active: true,
+
+            settings: {}
+
+          })
+
+        });
+
+        
+
+        if (response.ok) {
+
+          const resData = await response.json();
+
+          triggerToast(`✓ Déploiement automatique réussi sur n8n (ID: ${resData.id}) !`);
+
+          setDeployLogs(prev => [
+
+            ...prev,
+
+            `[PROD] Déploiement direct réussi sur n8n via l'API Key.`,
+
+            `[PROD] URL du workflow : ${n8nUrl}/workflow/${resData.id}`
+
+          ]);
+
+          setIsLaunchingAutomation(false);
+
+          setShowAutomationModal(true);
+
+          window.open(`${n8nUrl}/workflow/${resData.id}`, '_blank');
+
+          return;
+
+        } else {
+
+          const errText = await response.text();
+
+          console.warn("Direct deploy failed:", errText);
+
+          triggerToast("Déploiement direct bloqué (CORS/Réseau). Copie manuelle activée.");
+
+        }
+
+      } catch (e) {
+
+        console.error("Direct deploy error:", e);
+
+        triggerToast("Erreur de liaison API n8n. Copie manuelle activée.");
+
+      }
+
+    }
+
+    
+
     triggerToast("✓ Scénario copié dans votre presse-papiers !");
 
     setIsLaunchingAutomation(false);
@@ -4822,7 +4912,7 @@ L'objet JSON doit respecter rigoureusement cette structure :
 
     
 
-    const targetUrl = platform === 'make' ? 'https://www.make.com/en/login' : 'http://localhost:5678/';
+    const targetUrl = platform === 'make' ? 'https://www.make.com/en/login' : `${n8nUrl}/`;
 
     window.open(targetUrl, '_blank');
 
@@ -5233,11 +5323,17 @@ L'objet JSON doit respecter rigoureusement cette structure :
         {activeTab === 'telemetry' && (
 
           <TelemetryTab
+
             telemetryRuns={telemetryRuns}
+
             setTelemetryRuns={setTelemetryRuns}
+
             expandedRunId={expandedRunId}
+
             setExpandedRunId={setExpandedRunId}
+
             triggerToast={triggerToast}
+
           />
 
         )}
@@ -5245,16 +5341,27 @@ L'objet JSON doit respecter rigoureusement cette structure :
         {activeTab === 'roi' && (
 
           <RoiTab
+
             gmbProfiles={gmbProfiles}
+
             roiNumReviews={roiNumReviews}
+
             setRoiNumReviews={setRoiNumReviews}
+
             roiMinutesPerReview={roiMinutesPerReview}
+
             setRoiMinutesPerReview={setRoiMinutesPerReview}
+
             roiHourlyRate={roiHourlyRate}
+
             setRoiHourlyRate={setRoiHourlyRate}
+
             roiExternalAgencyFee={roiExternalAgencyFee}
+
             setRoiExternalAgencyFee={setRoiExternalAgencyFee}
+
             copyToClipboard={copyToClipboard}
+
           />
 
         )}
@@ -5398,51 +5505,97 @@ L'objet JSON doit respecter rigoureusement cette structure :
         {activeTab === 'profiles' && (
 
           <ProfilesTab
+
             googleToken={googleToken}
+
             fetchRealGmailInbox={fetchRealGmailInbox}
+
             isGmailLoading={isGmailLoading}
+
             handleGoogleOAuthLogout={handleGoogleOAuthLogout}
+
             handleGoogleOAuthLogin={handleGoogleOAuthLogin}
+
             gmailMessages={gmailMessages}
+
             setGmbReviewInput={setGmbReviewInput}
+
             setActionMode={setActionMode}
+
             setActiveTab={setActiveTab}
+
             triggerToast={triggerToast}
+
             placeSearchQuery={placeSearchQuery}
+
             setPlaceSearchQuery={setPlaceSearchQuery}
+
             handleSearchPlaceWithIA={handleSearchPlaceWithIA}
+
             isSearchingPlace={isSearchingPlace}
+
             placeSearchResult={placeSearchResult}
+
             setPlaceSearchResult={setPlaceSearchResult}
+
             isEditingSearchResult={isEditingSearchResult}
+
             setIsEditingSearchResult={setIsEditingSearchResult}
+
             handleImportPlaceResult={handleImportPlaceResult}
+
             handleImportAndAddImmediately={handleImportAndAddImmediately}
+
             newProfileLocation={newProfileLocation}
+
             setNewProfileLocation={setNewProfileLocation}
+
             newProfileEmail={newProfileEmail}
+
             setNewProfileEmail={setNewProfileEmail}
+
             newProfileCategory={newProfileCategory}
+
             setNewProfileCategory={setNewProfileCategory}
+
             newProfileAddress={newProfileAddress}
+
             setNewProfileAddress={setNewProfileAddress}
+
             newProfilePhone={newProfilePhone}
+
             setNewProfilePhone={setNewProfilePhone}
+
             newProfileWebsite={newProfileWebsite}
+
             setNewProfileWebsite={setNewProfileWebsite}
+
             newProfileSiret={newProfileSiret}
+
             setNewProfileSiret={setNewProfileSiret}
+
             newProfileRating={newProfileRating}
+
             setNewProfileRating={setNewProfileRating}
+
             newProfileTotalReviews={newProfileTotalReviews}
+
             setNewProfileTotalReviews={setNewProfileTotalReviews}
+
             handleAddProfile={handleAddProfile}
+
             gmbProfiles={gmbProfiles}
+
             getProfileRules={getProfileRules}
+
             handleToggleAutoReply={handleToggleAutoReply}
+
             handleUpdateRule={handleUpdateRule}
+
             setGmbLocation={setGmbLocation}
+
             handleDeleteProfile={handleDeleteProfile}
+
           />
 
         )}
@@ -5560,34 +5713,63 @@ L'objet JSON doit respecter rigoureusement cette structure :
         {activeTab === 'clients' && (
 
           <ClientsTab
+
             theme={theme}
+
             agencyName={agencyName}
+
             setAgencyName={setAgencyName}
+
             primaryBrandTheme={primaryBrandTheme}
+
             setPrimaryBrandTheme={setPrimaryBrandTheme}
+
             agencyPricingBase={agencyPricingBase}
+
             setAgencyPricingBase={setAgencyPricingBase}
+
             agencyPricingPerReview={agencyPricingPerReview}
+
             setAgencyPricingPerReview={setAgencyPricingPerReview}
+
             gmbProfiles={gmbProfiles}
+
             newClientName={newClientName}
+
             setNewClientName={setNewClientName}
+
             newClientContact={newClientContact}
+
             setNewClientContact={setNewClientContact}
+
             newClientEmail={newClientEmail}
+
             setNewClientEmail={setNewClientEmail}
+
             newClientPhone={newClientPhone}
+
             setNewClientPhone={setNewClientPhone}
+
             newClientStatus={newClientStatus}
+
             setNewClientStatus={setNewClientStatus}
+
             newClientAssignedProfiles={newClientAssignedProfiles}
+
             setNewClientAssignedProfiles={setNewClientAssignedProfiles}
+
             clientsList={clientsList}
+
             invoiceModalClient={invoiceModalClient}
+
             setInvoiceModalClient={setInvoiceModalClient}
+
             handleCreateClient={handleCreateClient}
+
             handleDeleteClient={handleDeleteClient}
+
             triggerToast={triggerToast}
+
           />
 
         )}
@@ -5595,17 +5777,29 @@ L'objet JSON doit respecter rigoureusement cette structure :
         {activeTab === 'settings' && (
 
           <SettingsTab
+
             keysSearchTerm={keysSearchTerm}
+
             setKeysSearchTerm={setKeysSearchTerm}
+
             apiKeys={apiKeys}
+
             handleUpdateKey={handleUpdateKey}
+
             filteredKeys={filteredKeys}
+
             keyConfigMethod={keyConfigMethod}
+
             handleUpdateKeyMethod={handleUpdateKeyMethod}
+
             handleOAuthConnectInBg={handleOAuthConnectInBg}
+
             testStatus={testStatus}
+
             testSpecificConnection={testSpecificConnection}
+
             getCategoryDetails={getCategoryDetails}
+
           />
 
         )}
