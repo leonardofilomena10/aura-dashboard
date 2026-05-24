@@ -1404,7 +1404,250 @@ Restons en contact pour configurer votre essai gratuit de 14 jours !`;
 
     window.addEventListener('message', handleMessage);
 
-    return () => window.removeEventListener('message', handleMessage);
+    // --- Antigravity Voice & Command Helpers ---
+  const startSpeechRecognition = (onTranscript, onEnd) => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      triggerToast("⚠️ La reconnaissance vocale n'est pas supportée dans votre navigateur.");
+      return null;
+    }
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'fr-FR';
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+
+    recognition.onresult = (event) => {
+      const transcript = event.results[0][0].transcript;
+      onTranscript(transcript);
+    };
+
+    recognition.onend = () => {
+      if (onEnd) onEnd();
+    };
+
+    recognition.onerror = (event) => {
+      console.error("Speech recognition error", event.error);
+      if (onEnd) onEnd();
+    };
+
+    recognition.start();
+    return recognition;
+  };
+
+  const parseStepVoiceDescription = (text) => {
+    const textLower = text.toLowerCase();
+    let detectedTool = "";
+    
+    if (textLower.includes("slack")) {
+      detectedTool = "Slack";
+    } else if (textLower.includes("gmail") || textLower.includes("email") || textLower.includes("e-mail") || textLower.includes("courriel")) {
+      detectedTool = "Gmail";
+    } else if (textLower.includes("sheet") || textLower.includes("sheets") || textLower.includes("tableur") || textLower.includes("google sheets") || textLower.includes("excel")) {
+      detectedTool = "Google Sheets";
+    } else if (textLower.includes("twilio") || textLower.includes("sms")) {
+      detectedTool = "Twilio";
+    } else if (textLower.includes("bland") || textLower.includes("appel") || textLower.includes("téléphone") || textLower.includes("voix")) {
+      detectedTool = "Bland.ai";
+    } else if (textLower.includes("elevenlabs") || textLower.includes("synthèse vocale") || textLower.includes("audio")) {
+      detectedTool = "ElevenLabs";
+    } else if (textLower.includes("notion")) {
+      detectedTool = "Notion";
+    } else if (textLower.includes("openai") || textLower.includes("gemini") || textLower.includes("claude") || textLower.includes("gpt") || textLower.includes("ia") || textLower.includes("llm") || textLower.includes("intelligence artificielle")) {
+      detectedTool = "Gemini IA";
+    } else if (textLower.includes("airtable")) {
+      detectedTool = "Airtable";
+    } else if (textLower.includes("stripe") || textLower.includes("paiement")) {
+      detectedTool = "Stripe";
+    } else if (textLower.includes("shopify") || textLower.includes("boutique")) {
+      detectedTool = "Shopify";
+    }
+    
+    return { tool: detectedTool, action: text };
+  };
+
+  const processAntigravityCommand = (cmdText) => {
+    if (!cmdText.trim()) return;
+    
+    const userMsg = { sender: 'user', text: cmdText };
+    setAntigravityMessages(prev => [...prev, userMsg]);
+    setAntigravityCommandInput('');
+    
+    const text = cmdText.toLowerCase();
+    let reply = "Désolé, je n'ai pas pu décoder cette commande d'orchestration. Vous pouvez me demander de naviguer dans l'interface, changer le thème, configurer des clés d'API ou connecter vos serveurs MCP.";
+    
+    // 1. Navigation Commands
+    if (text.includes("onglet") || text.includes("va sur") || text.includes("affiche") || text.includes("montre") || text.includes("ouvre")) {
+      if (text.includes("réglage") || text.includes("setting") || text.includes("configuration")) {
+        setActiveTab('settings');
+        reply = "Fait ! J'ai ouvert l'onglet des configurations et réglages.";
+      } else if (text.includes("scénario") || text.includes("scenario") || text.includes("flux")) {
+        setActiveTab('scenarios');
+        reply = "Fait ! J'ai ouvert l'onglet des scénarios et automatisation.";
+      } else if (text.includes("client")) {
+        setActiveTab('clients');
+        reply = "Fait ! J'ai ouvert l'onglet de gestion des clients.";
+      } else if (text.includes("profil") || text.includes("gmb")) {
+        setActiveTab('profiles');
+        reply = "Fait ! J'ai ouvert l'onglet des profils Google My Business.";
+      } else if (text.includes("catalogue") || text.includes("outil")) {
+        setActiveTab('catalog');
+        reply = "Fait ! J'ai ouvert le catalogue des outils d'IA.";
+      } else if (text.includes("télémétrie") || text.includes("telemetry") || text.includes("historique")) {
+        setActiveTab('telemetry');
+        reply = "Fait ! J'ai ouvert l'onglet de télémétrie des exécutions.";
+      } else if (text.includes("roi") || text.includes("rentabilité") || text.includes("calcul")) {
+        setActiveTab('roi');
+        reply = "Fait ! J'ai ouvert le simulateur de ROI.";
+      } else if (text.includes("live") || text.includes("chat")) {
+        setActiveTab('live-action');
+        reply = "Fait ! J'ai ouvert le module Live Action.";
+      }
+    }
+    
+    // 2. Theme Commands
+    else if (text.includes("thème") || text.includes("theme") || text.includes("couleur")) {
+      if (text.includes("émeraude") || text.includes("vert") || text.includes("emerald")) {
+        setPrimaryBrandTheme('emerald');
+        reply = "Fait ! J'ai activé le thème Émeraude.";
+      } else if (text.includes("violet") || text.includes("purple") || text.includes("violette")) {
+        setPrimaryBrandTheme('violet');
+        reply = "Fait ! J'ai activé le thème Violet.";
+      } else if (text.includes("rose") || text.includes("pink")) {
+        setPrimaryBrandTheme('rose');
+        reply = "Fait ! J'ai activé le thème Rose.";
+      } else if (text.includes("ambre") || text.includes("orange") || text.includes("amber")) {
+        setPrimaryBrandTheme('amber');
+        reply = "Fait ! J'ai activé le thème Ambre.";
+      } else if (text.includes("indigo") || text.includes("bleu")) {
+        setPrimaryBrandTheme('indigo');
+        reply = "Fait ! J'ai activé le thème Indigo.";
+      }
+    }
+    
+    // 3. API Keys Config Commands
+    else if (text.includes("clé api") || text.includes("api key") || text.includes("token")) {
+      const match = cmdText.match(/(openai|n8n|gemini|elevenlabs|bland)\\s+sur\\s+(.+)$/i);
+      if (match) {
+        const keyName = match[1].toLowerCase();
+        const keyValue = match[2].trim();
+        setApiKeys(prev => ({ ...prev, [keyName]: keyValue }));
+        reply = `Fait ! J'ai configuré la clé API pour "${keyName}".`;
+      } else {
+        reply = "Pour définir une clé API, dites par exemple : 'définis la clé API OpenAI sur sk-...'";
+      }
+    }
+    
+    // 4. Client creation
+    else if (text.includes("crée un client") || text.includes("ajoute le client") || text.includes("nouveau client")) {
+      const match = cmdText.match(/(?:client|l'utilisateur)\\s+([^,.]+)/i);
+      if (match) {
+        const name = match[1].trim();
+        const newClient = {
+          id: `client-${Date.now()}`,
+          name: name,
+          businessType: "Commerce Local",
+          location: "Paris, FR",
+          joinedDate: new Date().toISOString().split('T')[0],
+          monthlyReviews: 0,
+          activeCampaigns: 0,
+          automationActive: false,
+          avatarUrl: `https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80`
+        };
+        setClientsList(prev => [...prev, newClient]);
+        reply = `Fait ! J'ai ajouté le client "${name}" dans la liste des clients.`;
+      } else {
+        reply = "Pour ajouter un client, dites par exemple : 'ajoute le client Jean Dupont'.";
+      }
+    }
+    
+    // 5. MCP control
+    else if (text.includes("mcp") || text.includes("serveur")) {
+      if (text.includes("connecte") || text.includes("active") || text.includes("démarre")) {
+        const match = text.match(/(google|n8n|make)/i);
+        if (match) {
+          const serv = match[1];
+          setMcpServers(prev => prev.map(s => s.name.toLowerCase().includes(serv) ? { ...s, status: 'connected' } : s));
+          reply = `Fait ! Le serveur MCP pour "${serv}" a été connecté avec succès.`;
+        } else {
+          reply = "Dites 'connecte le serveur MCP Google' ou 'connecte le serveur MCP Make'.";
+        }
+      } else if (text.includes("déconnecte") || text.includes("coupe") || text.includes("arrête")) {
+        const match = text.match(/(google|n8n|make)/i);
+        if (match) {
+          const serv = match[1];
+          setMcpServers(prev => prev.map(s => s.name.toLowerCase().includes(serv) ? { ...s, status: 'disconnected' } : s));
+          reply = `Fait ! Le serveur MCP pour "${serv}" a été déconnecté.`;
+        }
+      }
+    }
+    
+    // 6. Launch simulation
+    else if (text.includes("simule") || text.includes("lance la simulation") || text.includes("test le flux")) {
+      if (activeScenario && activeScenario.steps.length > 0) {
+        runScenarioSimulation();
+        reply = `Fait ! J'ai déclenché la simulation vocale du scénario : "${activeScenario.name}".`;
+      } else {
+        reply = "Aucun scénario actif ou le scénario ne contient pas d'étapes à simuler.";
+      }
+    }
+    
+    // 7. Deploy scenario
+    else if (text.includes("déploie") || text.includes("lance l'automatisation")) {
+      if (activeScenario && activeScenario.steps.length > 0) {
+        handleLaunchAutomationPipeline();
+        reply = `Fait ! J'ai orchestré et déployé le scénario "${activeScenario.name}" vers n8n.`;
+      } else {
+        reply = "Veuillez activer un scénario valide avant de demander un déploiement.";
+      }
+    }
+    
+    setTimeout(() => {
+      setAntigravityMessages(prev => [...prev, { sender: 'bot', text: reply }]);
+    }, 800);
+  };
+
+  const handleAntigravityVoiceClick = () => {
+    if (isListeningAntigravity) {
+      setIsListeningAntigravity(false);
+      return;
+    }
+    setIsListeningAntigravity(true);
+    startSpeechRecognition(
+      (transcript) => {
+        processAntigravityCommand(transcript);
+      },
+      () => {
+        setIsListeningAntigravity(false);
+      }
+    );
+  };
+
+  const handleStepVoiceClick = () => {
+    if (isListeningStepVoice) {
+      setIsListeningStepVoice(false);
+      return;
+    }
+    setIsListeningStepVoice(true);
+    startSpeechRecognition(
+      (transcript) => {
+        const parsed = parseStepVoiceDescription(transcript);
+        if (parsed.tool) {
+          setModalToolInput(parsed.tool);
+          triggerToast(`🤖 Antigravity a détecté l'outil "${parsed.tool}" !`);
+        } else {
+          setModalToolInput("Autre");
+          triggerToast(`🤖 Outil non reconnu. Action enregistrée.`);
+        }
+        setModalActionInput(parsed.action);
+      },
+      () => {
+        setIsListeningStepVoice(false);
+      }
+    );
+  };
+
+  return () => window.removeEventListener('message', handleMessage);
 
   }, []);
 
@@ -4387,6 +4630,27 @@ L'objet JSON doit respecter rigoureusement cette structure :
   const [showAutomationModal, setShowAutomationModal] = useState(false);
   const [automationError, setAutomationError] = useState(null);
 
+  const [automationStatus, setAutomationStatus] = useState('idle');
+  const [deployedWorkflowUrl, setDeployedWorkflowUrl] = useState('');
+  const [deployedWorkflowId, setDeployedWorkflowId] = useState('');
+
+  // Antigravity AI Assistant & MCP states
+  const [showAntigravityPanel, setShowAntigravityPanel] = useState(false);
+  const [antigravityConnected, setAntigravityConnected] = useState(false);
+  const [antigravityUsername, setAntigravityUsername] = useState('');
+  const [antigravityPassword, setAntigravityPassword] = useState('');
+  const [antigravityMessages, setAntigravityMessages] = useState([
+    { sender: 'bot', text: 'Bonjour ! Je suis Antigravity, votre chef d\'orchestre d\'intelligence artificielle. Connectez-vous avec vos identifiants pour me donner le plein contrôle vocal et MCP sur Aura.' }
+  ]);
+  const [antigravityCommandInput, setAntigravityCommandInput] = useState('');
+  const [isListeningAntigravity, setIsListeningAntigravity] = useState(false);
+  const [isListeningStepVoice, setIsListeningStepVoice] = useState(false);
+  const [mcpServers, setMcpServers] = useState([
+    { name: 'Server-Google-SSO', status: 'connected', type: 'Google auth proxy' },
+    { name: 'Server-n8n-Engine', status: 'connected', type: 'Workflow orchestrator' },
+    { name: 'Server-Make-Bridge', status: 'disconnected', type: 'Make.com relay' }
+  ]);
+
   const [showScrollTop, setShowScrollTop] = useState(false);
 
   useEffect(() => {
@@ -6772,7 +7036,213 @@ L'objet JSON doit respecter rigoureusement cette structure :
 
                   <Rocket className="w-5 h-5 text-indigo-400 animate-pulse" />
 
-                )}
+                )}
+
+      {/* Floating Antigravity Conductor Trigger */}
+      <button
+        onClick={() => setShowAntigravityPanel(true)}
+        className="fixed bottom-6 right-6 z-40 p-3.5 rounded-2xl bg-gradient-to-r from-indigo-650 via-violet-650 to-indigo-550 hover:scale-105 active:scale-95 transition-all shadow-xl hover:shadow-indigo-500/25 border border-indigo-400/30 text-white flex items-center justify-center gap-2 group animate-pulse"
+        style={{ boxShadow: '0 0 20px rgba(99, 102, 241, 0.4)' }}
+        aria-label="Chef d'Orchestre Antigravity"
+      >
+        <div className="relative">
+          <Sparkles className="w-4.5 h-4.5 group-hover:rotate-12 transition-transform duration-300 text-indigo-200" />
+          <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-emerald-400 border border-slate-950"></span>
+        </div>
+        <span className="text-xs font-bold uppercase tracking-wider pr-1">Antigravity AI</span>
+      </button>
+
+      {/* Antigravity Chef d'Orchestre Side Drawer */}
+      {showAntigravityPanel && (
+        <div className="fixed inset-0 z-50 flex justify-end animate-fadeIn">
+          {/* Backdrop */}
+          <div 
+            onClick={() => setShowAntigravityPanel(false)}
+            className="absolute inset-0 bg-slate-955/60 backdrop-blur-sm"
+          />
+
+          {/* Drawer content */}
+          <div className="glass-card bg-slate-955/95 border-l border-slate-850 w-full sm:w-[440px] h-full relative z-10 flex flex-col justify-between shadow-2xl animate-slideIn">
+            
+            {/* Header */}
+            <div className="p-5 border-b border-slate-900 flex justify-between items-center bg-slate-955/40">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-indigo-500/10 rounded-xl border border-indigo-500/20 text-indigo-400">
+                  <Cpu className="w-5 h-5 animate-spin-slow" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-extrabold text-white uppercase tracking-wider">Antigravity Orchestrateur</h3>
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    <span className={`w-2 h-2 rounded-full ${antigravityConnected ? 'bg-emerald-400 animate-pulse' : 'bg-slate-600'}`}></span>
+                    <span className="text-[10px] text-slate-400 font-medium font-mono">
+                      {antigravityConnected ? "Liaison active" : "Identifiants requis"}
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <button 
+                onClick={() => setShowAntigravityPanel(false)}
+                className="p-1.5 hover:bg-slate-900 rounded-lg text-slate-400 hover:text-white transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="flex-1 overflow-y-auto p-5 space-y-5 scrollbar-thin">
+              {!antigravityConnected ? (
+                // Connect Screen
+                <div className="space-y-5 py-6">
+                  <div className="text-center space-y-2">
+                    <div className="w-12 h-12 rounded-2xl bg-indigo-500/5 border border-indigo-500/15 mx-auto flex items-center justify-center text-indigo-400">
+                      <Key className="w-6 h-6" />
+                    </div>
+                    <h4 className="text-xs font-bold text-white uppercase tracking-wider">Liaison Chef d'Orchestre</h4>
+                    <p className="text-[11px] text-slate-405 max-w-xs mx-auto leading-relaxed">
+                      Saisissez vos identifiants Antigravity pour activer le protocole MCP local et l'orchestration vocale/textuelle d'Aura.
+                    </p>
+                  </div>
+
+                  <form 
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      if (antigravityUsername.trim() && antigravityPassword.trim()) {
+                        setAntigravityConnected(true);
+                        setAntigravityMessages(prev => [
+                          ...prev,
+                          { sender: 'bot', text: `Protocole initialisé avec succès ! Bonjour ${antigravityUsername}. Je contrôle désormais les paramètres d'Aura et les serveurs MCP. Dites par exemple : 'affiche le catalogue', 'active le thème émeraude' ou 'déploie le scénario'.` }
+                        ]);
+                        triggerToast("✓ Antigravity AI activé avec succès !");
+                      } else {
+                        triggerToast("⚠️ Veuillez remplir tous les champs.");
+                      }
+                    }}
+                    className="space-y-4 max-w-sm mx-auto bg-slate-900/40 p-4 border border-slate-850 rounded-2xl"
+                  >
+                    <div>
+                      <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Identifiant Antigravity</label>
+                      <input 
+                        type="text" 
+                        value={antigravityUsername}
+                        onChange={(e) => setAntigravityUsername(e.target.value)}
+                        placeholder="Utilisateur ou Email"
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500 transition-colors"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Clé Secrète / Token</label>
+                      <input 
+                        type="password" 
+                        value={antigravityPassword}
+                        onChange={(e) => setAntigravityPassword(e.target.value)}
+                        placeholder="••••••••••••"
+                        className="w-full bg-slate-955 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500 transition-colors"
+                      />
+                    </div>
+                    <button
+                      type="submit"
+                      className="w-full py-2.5 bg-indigo-650 hover:bg-indigo-550 text-white text-xs font-bold rounded-xl transition-all shadow-lg shadow-indigo-600/10"
+                    >
+                      Activer le Chef d'Orchestre
+                    </button>
+                  </form>
+                </div>
+              ) : (
+                // Chat and Command Execution Panel
+                <div className="h-full flex flex-col justify-between space-y-4">
+                  {/* Messages Area */}
+                  <div className="flex-1 space-y-3.5 max-h-[360px] overflow-y-auto pr-1 scrollbar-thin">
+                    {antigravityMessages.map((msg, idx) => (
+                      <div 
+                        key={idx} 
+                        className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'} animate-fadeIn`}
+                      >
+                        <div className={`max-w-[85%] p-3 rounded-2xl text-xs leading-relaxed ${
+                          msg.sender === 'user' 
+                            ? 'bg-indigo-600 text-white rounded-tr-none' 
+                            : 'bg-slate-900/60 border border-slate-850 text-slate-200 rounded-tl-none'
+                        }`}>
+                          <span className="font-semibold text-[9px] block uppercase tracking-wider mb-1 font-mono text-slate-455">
+                            {msg.sender === 'user' ? 'Vous' : 'Antigravity'}
+                          </span>
+                          <span>{msg.text}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* MCP Active Servers Status */}
+                  <div className="p-3.5 bg-slate-900/40 border border-slate-850 rounded-2xl space-y-2">
+                    <span className="block text-[9px] font-bold text-slate-500 uppercase tracking-wider">Liaisons MCP Connectées ({mcpServers.filter(s => s.status === 'connected').length})</span>
+                    <div className="grid grid-cols-1 gap-2">
+                      {mcpServers.map((s, idx) => (
+                        <div key={idx} className="flex justify-between items-center p-2 bg-slate-955/60 border border-slate-900 rounded-xl text-[10px]">
+                          <div className="flex items-center gap-1.5">
+                            <Database className="w-3.5 h-3.5 text-indigo-400" />
+                            <div>
+                              <span className="font-bold text-white block leading-none">{s.name}</span>
+                              <span className="text-[8px] text-slate-500 font-mono mt-0.5 block">{s.type}</span>
+                            </div>
+                          </div>
+                          <span className={`px-2 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider ${
+                            s.status === 'connected' 
+                              ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' 
+                              : 'bg-slate-900 text-slate-500 border border-slate-800'
+                          }`}>
+                            {s.status === 'connected' ? 'actif' : 'inactif'}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Footer Input Area */}
+            {antigravityConnected && (
+              <div className="p-4 border-t border-slate-900 bg-slate-950/40 space-y-3">
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleAntigravityVoiceClick}
+                    className={`p-2.5 rounded-xl border transition-all ${
+                      isListeningAntigravity
+                        ? "bg-red-500/10 border-red-500 text-red-400 animate-pulse"
+                        : "bg-slate-900 border-slate-800 text-slate-400 hover:text-white"
+                    }`}
+                    title="Commande Vocale"
+                  >
+                    <Mic className="w-4 h-4" />
+                  </button>
+                  <input
+                    type="text"
+                    value={antigravityCommandInput}
+                    onChange={(e) => setAntigravityCommandInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        processAntigravityCommand(antigravityCommandInput);
+                      }
+                    }}
+                    placeholder={isListeningAntigravity ? "Écoute en cours..." : "Entrez une commande (ex: active theme émeraude)..."}
+                    className="flex-1 bg-slate-900 border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors"
+                  />
+                  <button
+                    onClick={() => processAntigravityCommand(antigravityCommandInput)}
+                    className="p-2.5 bg-indigo-650 hover:bg-indigo-550 text-white rounded-xl text-xs font-bold transition-all"
+                  >
+                    <ArrowRight className="w-4 h-4" />
+                  </button>
+                </div>
+                <div className="flex justify-between items-center text-[9px] text-slate-500 font-mono">
+                  <span>Protocole MCP: v1.0.4</span>
+                  <span>Langue: FR-FR</span>
+                </div>
+              </div>
+            )}
+
+          </div>
+        </div>
+      )}
 
                 <span className="font-bold text-white text-base">
 
@@ -7354,7 +7824,20 @@ L'objet JSON doit respecter rigoureusement cette structure :
 
               <div>
 
-                <label className="block text-slate-400 font-bold uppercase mb-1.5 text-[10px]">Description de l'action</label>
+                <div className="flex justify-between items-center mb-1.5">
+                  <label className="block text-slate-400 font-bold uppercase text-[10px]">Description de l'action</label>
+                  <button
+                    onClick={handleStepVoiceClick}
+                    className={`flex items-center gap-1.5 px-2 py-0.5 rounded border text-[9px] font-bold transition-all ${
+                      isListeningStepVoice
+                        ? "bg-red-500/10 border-red-500 text-red-400 animate-pulse"
+                        : "bg-indigo-500/10 border-indigo-500/30 text-indigo-400 hover:bg-indigo-500/20"
+                    }`}
+                  >
+                    <Mic className="w-2.5 h-2.5" />
+                    <span>{isListeningStepVoice ? "Écoute..." : "Dicter à l'IA"}</span>
+                  </button>
+                </div>
 
                 <textarea
 
@@ -7502,7 +7985,20 @@ L'objet JSON doit respecter rigoureusement cette structure :
 
               <div>
 
-                <label className="block text-slate-400 font-bold uppercase mb-1.5 text-[10px]">Description de l'action</label>
+                <div className="flex justify-between items-center mb-1.5">
+                  <label className="block text-slate-400 font-bold uppercase text-[10px]">Description de l'action</label>
+                  <button
+                    onClick={handleStepVoiceClick}
+                    className={`flex items-center gap-1.5 px-2 py-0.5 rounded border text-[9px] font-bold transition-all ${
+                      isListeningStepVoice
+                        ? "bg-red-500/10 border-red-500 text-red-400 animate-pulse"
+                        : "bg-indigo-500/10 border-indigo-500/30 text-indigo-400 hover:bg-indigo-500/20"
+                    }`}
+                  >
+                    <Mic className="w-2.5 h-2.5" />
+                    <span>{isListeningStepVoice ? "Écoute..." : "Dicter à l'IA"}</span>
+                  </button>
+                </div>
 
                 <textarea
 
