@@ -4384,7 +4384,8 @@ L'objet JSON doit respecter rigoureusement cette structure :
 
   const [isLaunchingAutomation, setIsLaunchingAutomation] = useState(false);
 
-  const [showAutomationModal, setShowAutomationModal] = useState(false);
+  const [showAutomationModal, setShowAutomationModal] = useState(false);
+  const [automationError, setAutomationError] = useState(null);
 
   const [automationPlatform, setAutomationPlatform] = useState('n8n');
 
@@ -4780,64 +4781,42 @@ L'objet JSON doit respecter rigoureusement cette structure :
 
   };
 
-  const handleLaunchAutomationPipeline = async () => {
-
-    setIsLaunchingAutomation(true);
-
-    triggerToast("Compilation du scénario actif...");
-
-    
-
-    await new Promise(r => setTimeout(r, 700));
-
-    
-
-    const isMake = activeScenario?.steps?.some(s => s && s.tool && typeof s.tool === 'string' && s.tool.toLowerCase().includes('make')) || false;
-
-    const platform = isMake ? 'make' : 'n8n';
-
-    setAutomationPlatform(platform);
-
-    
-
-    const generatedCode = platform === 'n8n' 
-
-      ? generateN8nWorkflow(activeScenario)
-
-      : generateMakeBlueprint(activeScenario);
-
-      
-
-    setAutomationJSON(generatedCode);
-
-    copyToClipboard(generatedCode);
-
-    
-
-    const n8nApiKey = apiKeys["n8n"];
-
-    const n8nUrl = (apiKeys["n8n_url"] || "http://localhost:5678").replace(/\/$/, "");
-
-    
-
-    if (platform === 'n8n' && n8nApiKey && n8nApiKey.trim() !== '') {
-
-      triggerToast("Déploiement automatique via proxy sécurisé...");
-
-      try {
-
-        const parsedWorkflow = JSON.parse(generatedCode);
-
-        const response = await fetch('/api/n8n-proxy', {
-
-          method: 'POST',
-
-          headers: {
-
-            'Content-Type': 'application/json'
-
-          },
-
+  const handleLaunchAutomationPipeline = async () => {
+    if (!activeScenario) return;
+    setIsLaunchingAutomation(true);
+    setAutomationError(null);
+
+    const platform = automationPlatform;
+    const generatedCode = platform === 'n8n' 
+      ? generateN8nWorkflow(activeScenario)
+      : generateMakeBlueprint(activeScenario);
+      
+    setAutomationJSON(generatedCode);
+    copyToClipboard(generatedCode);
+    
+    const n8nApiKey = apiKeys["n8n"];
+    const n8nUrl = (apiKeys["n8n_url"] || "http://localhost:5678").replace(/\/$/, "");
+    
+    if (platform === 'n8n') {
+      if (!n8nApiKey || n8nApiKey.trim() === '') {
+        setAutomationError("Clé API n8n non configurée dans vos paramètres. L'importation manuelle (copier-coller) a été activée.");
+        triggerToast("✓ Scénario copié ! Configurez une clé API n8n pour l'intégration automatique.");
+        setIsLaunchingAutomation(false);
+        setShowAutomationModal(true);
+        
+        const targetUrl = `${n8nUrl}/`;
+        window.open(targetUrl, '_blank');
+        return;
+      }
+
+      triggerToast("Déploiement automatique via proxy sécurisé...");
+      try {
+        const parsedWorkflow = JSON.parse(generatedCode);
+        const response = await fetch('/api/n8n-proxy', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
           body: JSON.stringify({
             n8nUrl: n8nUrl,
             apiKey: n8nApiKey,
@@ -4845,76 +4824,59 @@ L'objet JSON doit respecter rigoureusement cette structure :
               name: `[AURA] ${activeScenario.name}`,
               nodes: parsedWorkflow.nodes,
               connections: parsedWorkflow.connections,
-              active: true,
+              active: false, // Set to false to avoid validation/activation failure on creation
               settings: {}
             }
-          })
-
-        });
-
-        
-
-        if (response.ok) {
-
-          const resData = await response.json();
-
-          triggerToast(`✓ Déploiement automatique réussi sur n8n (ID: ${resData.id}) !`);
-
-          setDeployLogs(prev => [
-
-            ...prev,
-
-            `[PROD] Déploiement direct réussi sur n8n via l'API Key.`,
-
-            `[PROD] URL du workflow : ${n8nUrl}/workflow/${resData.id}`
-
-          ]);
-
-          setIsLaunchingAutomation(false);
-
-          setShowAutomationModal(true);
-
-          window.open(`${n8nUrl}/workflow/${resData.id}`, '_blank');
-
-          return;
-
-        } else {
-
-          const errText = await response.text();
-
-          console.warn("Direct deploy failed:", errText);
-
-          triggerToast("Déploiement direct bloqué (CORS/Réseau). Copie manuelle activée.");
-
-        }
-
-      } catch (e) {
-
-        console.error("Direct deploy error:", e);
-
-        triggerToast("Erreur de liaison API n8n. Copie manuelle activée.");
-
-      }
-
-    }
-
-    
-
-    triggerToast("✓ Scénario copié dans votre presse-papiers !");
-
-    setIsLaunchingAutomation(false);
-
-    setShowAutomationModal(true);
-
-    
-
-    const targetUrl = platform === 'make' ? 'https://www.make.com/en/login' : `${n8nUrl}/`;
-
-    window.open(targetUrl, '_blank');
-
-  };
-
-  const handleSwitchAutomationPlatform = (platform) => {
+          })
+        });
+        
+        if (response.ok) {
+          const resData = await response.json();
+          triggerToast(`✓ Déploiement automatique réussi sur n8n (ID: ${resData.id}) !`);
+          setDeployLogs(prev => [
+            ...prev,
+            `[PROD] Déploiement direct réussi sur n8n via l'API Key.`,
+            `[PROD] URL du workflow : ${n8nUrl}/workflow/${resData.id}`
+          ]);
+          setIsLaunchingAutomation(false);
+          setShowAutomationModal(true);
+          window.open(`${n8nUrl}/workflow/${resData.id}`, '_blank');
+          return;
+        } else {
+          let errorMsg = "Erreur de configuration ou réseau";
+          try {
+            const errJson = await response.json();
+            errorMsg = errJson.error || errorMsg;
+          } catch (_) {
+            try {
+              const errText = await response.text();
+              errorMsg = errText || errorMsg;
+            } catch (__) {}
+          }
+          console.warn("Direct deploy failed:", errorMsg);
+          setAutomationError(`L'API n8n a retourné une erreur : "${errorMsg}".`);
+          triggerToast("Échec du déploiement direct. Copie manuelle activée.");
+        }
+      } catch (e) {
+        console.error("Direct deploy error:", e);
+        setAutomationError(`Impossible de contacter le proxy de déploiement : ${e.message || e}`);
+        triggerToast("Erreur de liaison API n8n. Copie manuelle activée.");
+      }
+      
+      setIsLaunchingAutomation(false);
+      setShowAutomationModal(true);
+      return;
+    }
+    
+    triggerToast("✓ Scénario copié dans votre presse-papiers !");
+    setIsLaunchingAutomation(false);
+    setShowAutomationModal(true);
+    
+    const targetUrl = platform === 'make' ? 'https://www.make.com/en/login' : `${n8nUrl}/`;
+    window.open(targetUrl, '_blank');
+  };
+
+    const handleSwitchAutomationPlatform = (platform) => {
 
     setAutomationPlatform(platform);
 
@@ -6174,6 +6136,16 @@ L'objet JSON doit respecter rigoureusement cette structure :
 
             </div>
 
+            {automationError && (
+              <div className="p-3.5 bg-amber-500/10 border border-amber-500/25 rounded-2xl text-amber-200 text-xs flex items-start gap-2.5">
+                <AlertTriangle className="w-4.5 h-4.5 text-amber-400 shrink-0 mt-0.5" />
+                <div>
+                  <span className="font-bold block mb-0.5">Note sur le déploiement automatique :</span>
+                  <span className="text-slate-350">{automationError}</span>
+                </div>
+              </div>
+            )}
+
             {/* Platform Selector buttons */}
 
             <div className="space-y-4">

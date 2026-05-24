@@ -17,23 +17,41 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'Missing required fields: n8nUrl, apiKey, workflow' });
   }
 
-  const cleanUrl = n8nUrl.replace(/\/$/, '');
+  // Prepend https:// if protocol is missing
+  let cleanUrl = n8nUrl.trim().replace(/\/$/, '');
+  if (!/^https?:\/\//i.test(cleanUrl)) {
+    cleanUrl = `https://${cleanUrl}`;
+  }
+
+  console.log(`[n8n-proxy] Forwarding workflow creation to: ${cleanUrl}/api/v1/workflows`);
 
   try {
     const response = await fetch(`${cleanUrl}/api/v1/workflows`, {
       method: 'POST',
       headers: {
-        'X-N8N-API-KEY': apiKey,
+        'X-N8N-API-KEY': apiKey.trim(),
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(workflow),
     });
 
-    const data = await response.json();
-    return res.status(response.status).json(data);
+    const responseText = await response.text();
+    let responseData;
+    
+    try {
+      responseData = JSON.parse(responseText);
+    } catch (e) {
+      console.error('[n8n-proxy] Failed to parse n8n response as JSON:', responseText);
+      return res.status(response.status).json({ 
+        error: `n8n returned non-JSON response (status ${response.status})`,
+        details: responseText.slice(0, 200)
+      });
+    }
+
+    return res.status(response.status).json(responseData);
 
   } catch (error) {
-    console.error('[n8n-proxy] Error:', error);
+    console.error('[n8n-proxy] Fetch error:', error);
     return res.status(500).json({ error: error.message });
   }
 }
