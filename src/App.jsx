@@ -4822,36 +4822,32 @@ L'objet JSON doit respecter rigoureusement cette structure :
 
     if (platform === 'n8n' && n8nApiKey && n8nApiKey.trim() !== '') {
 
-      triggerToast("Tentative de déploiement direct via l'API n8n...");
+      triggerToast("Déploiement automatique via proxy sécurisé...");
 
       try {
 
         const parsedWorkflow = JSON.parse(generatedCode);
 
-        const response = await fetch(`${n8nUrl}/api/v1/workflows`, {
+        const response = await fetch('/api/n8n-proxy', {
 
           method: 'POST',
 
           headers: {
 
-            'X-N8N-API-KEY': n8nApiKey,
-
             'Content-Type': 'application/json'
 
           },
 
-          body: JSON.stringify({
-
-            name: `[AURA] ${activeScenario.name}`,
-
-            nodes: parsedWorkflow.nodes,
-
-            connections: parsedWorkflow.connections,
-
-            active: true,
-
-            settings: {}
-
+          body: JSON.stringify({
+            n8nUrl: n8nUrl,
+            apiKey: n8nApiKey,
+            workflow: {
+              name: `[AURA] ${activeScenario.name}`,
+              nodes: parsedWorkflow.nodes,
+              connections: parsedWorkflow.connections,
+              active: true,
+              settings: {}
+            }
           })
 
         });
