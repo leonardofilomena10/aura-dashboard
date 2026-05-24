@@ -4824,7 +4824,6 @@ L'objet JSON doit respecter rigoureusement cette structure :
               name: `[AURA] ${activeScenario.name}`,
               nodes: parsedWorkflow.nodes,
               connections: parsedWorkflow.connections,
-              active: false, // Set to false to avoid validation/activation failure on creation
               settings: {}
             }
           })
