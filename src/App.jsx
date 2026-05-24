@@ -1404,7 +1404,15 @@ Restons en contact pour configurer votre essai gratuit de 14 jours !`;
 
     window.addEventListener('message', handleMessage);
 
-    // --- Antigravity Voice & Command Helpers ---
+    return () => {
+
+      window.removeEventListener('message', handleMessage);
+
+    };
+
+  }, []);
+
+  // --- Antigravity Voice & Command Helpers ---
   const startSpeechRecognition = (onTranscript, onEnd) => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
@@ -1527,7 +1535,7 @@ Restons en contact pour configurer votre essai gratuit de 14 jours !`;
     
     // 3. API Keys Config Commands
     else if (text.includes("clé api") || text.includes("api key") || text.includes("token")) {
-      const match = cmdText.match(/(openai|n8n|gemini|elevenlabs|bland)\\s+sur\\s+(.+)$/i);
+      const match = cmdText.match(/(openai|n8n|gemini|elevenlabs|bland)\s+sur\s+(.+)$/i);
       if (match) {
         const keyName = match[1].toLowerCase();
         const keyValue = match[2].trim();
@@ -1537,10 +1545,33 @@ Restons en contact pour configurer votre essai gratuit de 14 jours !`;
         reply = "Pour définir une clé API, dites par exemple : 'définis la clé API OpenAI sur sk-...'";
       }
     }
+
+    // 3b. Agency Rename Command
+    else if (text.includes("agence") && (text.includes("nom") || text.includes("appelle") || text.includes("renomme") || text.includes("change"))) {
+      const match = cmdText.match(/(?:agence en|agence|l'agence)\s+([^,.]+)/i);
+      if (match) {
+        const newName = match[1].trim();
+        setAgencyName(newName);
+        reply = `Fait ! Le nom de l'agence a été modifié pour : "${newName}".`;
+      } else {
+        reply = "Pour renommer l'agence, dites par exemple : 'nomme l'agence en Super Agency'.";
+      }
+    }
+
+    // 3c. Platform Selector Command
+    else if (text.includes("plateforme") || text.includes("automation") || text.includes("n8n") || text.includes("make")) {
+      if (text.includes("n8n")) {
+        setAutomationPlatform('n8n');
+        reply = "Fait ! La plateforme d'automatisation active est désormais n8n.";
+      } else if (text.includes("make")) {
+        setAutomationPlatform('make');
+        reply = "Fait ! La plateforme d'automatisation active est désormais Make.com.";
+      }
+    }
     
     // 4. Client creation
     else if (text.includes("crée un client") || text.includes("ajoute le client") || text.includes("nouveau client")) {
-      const match = cmdText.match(/(?:client|l'utilisateur)\\s+([^,.]+)/i);
+      const match = cmdText.match(/(?:client|l'utilisateur)\s+([^,.]+)/i);
       if (match) {
         const name = match[1].trim();
         const newClient = {
@@ -1646,10 +1677,6 @@ Restons en contact pour configurer votre essai gratuit de 14 jours !`;
       }
     );
   };
-
-  return () => window.removeEventListener('message', handleMessage);
-
-  }, []);
 
   // Parse URL hash for OAuth redirect (supporting both standard and popup flows)
 
