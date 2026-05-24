@@ -6541,241 +6541,207 @@ L'objet JSON doit respecter rigoureusement cette structure :
 
       {/* Scenario Launch / Import to n8n or Make Modal Overlay */}
 
-      {showAutomationModal && (
-
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-md p-4 animate-fadeIn">
-
-          <div className="glass-card w-full max-w-2xl p-6 rounded-3xl border border-slate-800/80 space-y-6 shadow-2xl relative overflow-hidden animate-scaleIn">
-
-            
-
-            {/* Glossy top highlight line */}
-
-            <div className={`absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-${theme.primary}-500 to-transparent`}></div>
-
-            <div className="flex justify-between items-center pb-2 border-b border-slate-900/60">
-
-              <div className="flex items-center gap-2.5">
-
-                <ExternalLink className={`w-5 h-5 ${theme.text}`} />
-
-                <div>
-
-                  <h3 className="text-sm font-bold text-white uppercase tracking-wider">Intégration Directe : {activeScenario.name}</h3>
-
-                  <p className="text-[10px] text-slate-455">Importation du scénario opérationnel dans votre outil d'automatisation</p>
-
-                </div>
-
-              </div>
-
-              <button 
-
-                onClick={() => setShowAutomationModal(false)}
-
-                className="p-1.5 hover:bg-slate-800 rounded-xl text-slate-400 hover:text-white transition-all"
-
-              >
-
-                <X className="w-4 h-4" />
-
-              </button>
-
-            </div>
-
-            {automationError && (
-              <div className="p-3.5 bg-amber-500/10 border border-amber-500/25 rounded-2xl text-amber-200 text-xs flex items-start gap-2.5">
-                <AlertTriangle className="w-4.5 h-4.5 text-amber-400 shrink-0 mt-0.5" />
+      {showAutomationModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-md p-4 animate-fadeIn">
+          <div className="glass-card w-full max-w-2xl p-6 rounded-3xl border border-slate-800/80 space-y-6 shadow-2xl relative overflow-hidden animate-scaleIn">
+            {/* Glossy top highlight line */}
+            <div className={`absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-${automationStatus === 'success' ? 'emerald' : theme.primary}-500 to-transparent`}></div>
+            <div className="flex justify-between items-center pb-2 border-b border-slate-900/60">
+              <div className="flex items-center gap-2.5">
+                {automationStatus === 'success' ? (
+                  <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+                ) : (
+                  <ExternalLink className={`w-5 h-5 ${theme.text}`} />
+                )}
                 <div>
-                  <span className="font-bold block mb-0.5">Note sur le déploiement automatique :</span>
-                  <span className="text-slate-350">{automationError}</span>
+                  <h3 className="text-sm font-bold text-white uppercase tracking-wider">
+                    {automationStatus === 'success' ? "Déploiement Réussi !" : `Intégration Directe : ${activeScenario?.name}`}
+                  </h3>
+                  <p className="text-[10px] text-slate-455">
+                    {automationStatus === 'success' 
+                      ? "Le scénario a été correctement déployé sur n8n" 
+                      : "Importation du scénario opérationnel dans votre outil d'automatisation"}
+                  </p>
                 </div>
               </div>
-            )}
+              <button 
+                onClick={() => setShowAutomationModal(false)}
+                className="p-1.5 hover:bg-slate-800 rounded-xl text-slate-400 hover:text-white transition-all"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
 
-            {/* Platform Selector buttons */}
-
-            <div className="space-y-4">
-
-              <div className="flex gap-4">
-
-                <button
-
-                  onClick={() => handleSwitchAutomationPlatform('n8n')}
-
-                  className={`flex-1 py-3 px-4 border rounded-2xl flex flex-col items-center gap-1.5 transition-all ${
-
-                    automationPlatform === 'n8n'
-
-                      ? `${theme.bgMuted} ${theme.border} text-white shadow-lg ${theme.shadow}`
-
-                      : 'bg-slate-900/40 border-slate-850 text-slate-405 hover:text-slate-200'
-
-                  }`}
-
-                >
-
-                  <span className="font-extrabold text-sm">Formule n8n Workflow</span>
-
-                  <span className="text-[10px] text-slate-500 font-medium">Copier pour paste direct (Ctrl + V) dans le canvas n8n</span>
-
-                </button>
-
-                <button
-
-                  onClick={() => handleSwitchAutomationPlatform('make')}
-
-                  className={`flex-1 py-3 px-4 border rounded-2xl flex flex-col items-center gap-1.5 transition-all ${
-
-                    automationPlatform === 'make'
-
-                      ? `${theme.bgMuted} ${theme.border} text-white shadow-lg ${theme.shadow}`
-
-                      : 'bg-slate-900/40 border-slate-850 text-slate-405 hover:text-slate-200'
-
-                  }`}
-
-                >
-
-                  <span className="font-extrabold text-sm">Formule Make.com Blueprint</span>
-
-                  <span className="text-[10px] text-slate-500 font-medium">Import via fichier JSON blueprint sur Make</span>
-
-                </button>
-
-              </div>
-
-              {/* Instructions Panel */}
-
-              <div className="p-4 bg-slate-955 rounded-2xl border border-slate-850 text-slate-300 space-y-3 text-xs leading-relaxed">
-
-                <h4 className="font-bold text-white flex items-center gap-1.5">
-
-                  <Info className={`w-4 h-4 ${theme.text}`} />
-
-                  <span>Comment charger le scénario ?</span>
-
-                </h4>
-
-                {automationPlatform === 'n8n' ? (
-
-                  <ol className="list-decimal list-inside space-y-1.5 pl-1 text-[11px] text-slate-350">
-
-                    <li>Nous avons copié le code JSON complet du workflow dans votre presse-papiers.</li>
-
-                    <li>Ouvrez votre instance n8n locale ou cloud (onglet ouvert en arrière-plan).</li>
-
-                    <li>Créez un nouveau workflow ou allez sur une page de canvas vierge.</li>
-
-                    <li>Cliquez n'importe où sur le fond de grille et faites simplement **Ctrl + V** (coller) !</li>
-
-                    <li className="text-white font-semibold">Le scénario complet (Trigger, nœuds Gemini IA, connexions logiques) se matérialisera instantanément !</li>
-
-                  </ol>
-
-                ) : (
-
-                  <ol className="list-decimal list-inside space-y-1.5 pl-1 text-[11px] text-slate-350">
-
-                    <li>Nous avons copié le code JSON blueprint complet dans votre presse-papiers.</li>
-
-                    <li>Ouvrez votre console Make.com (onglet ouvert en arrière-plan).</li>
-
-                    <li>Créez un nouveau scénario vierge.</li>
-
-                    <li>Cliquez sur les trois petits points <span className="font-bold font-mono">...</span> en bas de l'écran Make, puis sélectionnez **"Import Blueprint"**.</li>
-
-                    <li>Collez le contenu du presse-papiers dans la zone de texte et validez l'importation.</li>
-
-                  </ol>
-
-                )}
-
-              </div>
-
-              {/* JSON preview */}
-
-              <div className="space-y-1.5">
-
-                <div className="flex justify-between items-center">
-
-                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Aperçu du Scénario JSON ({automationPlatform === 'n8n' ? 'n8n' : 'Make'})</span>
-
-                  <button
-
-                    onClick={() => {
-
-                      copyToClipboard(automationJSON);
-
-                      triggerToast("✓ Code copié à nouveau !");
-
-                    }}
-
-                    className="text-[10px] text-indigo-400 hover:underline flex items-center gap-1"
-
-                  >
-
-                    <Copy className="w-3 h-3" /> Copier à nouveau
-
-                  </button>
-
-                </div>
-
-                <pre className="w-full bg-black/90 border border-slate-850 p-4 rounded-xl text-[10px] font-mono text-slate-300 max-h-44 overflow-y-auto scrollbar-thin">
-
-                  {automationJSON}
-
-                </pre>
-
-              </div>
-
-            </div>
-
-            {/* Modal actions */}
-
-            <div className="flex justify-end gap-3 border-t border-slate-900/60 pt-4">
-
-              <button
-
-                onClick={() => setShowAutomationModal(false)}
-
-                className="px-5 py-2.5 bg-slate-950 border border-slate-850 hover:bg-slate-900 text-slate-300 font-bold text-xs rounded-xl transition-all"
-
-              >
-
-                Fermer l'intégration
-
-              </button>
-
-              <button
-
-                onClick={() => {
-
-                  const configuredN8nUrl = (apiKeys["n8n_url"] || "http://localhost:5678").replace(/\/$/, "");
-                  const targetUrl = automationPlatform === 'make' ? 'https://www.make.com/en/login' : `${configuredN8nUrl}/`;
-
-                  window.open(targetUrl, '_blank');
-
-                }}
-
-                className={`px-6 py-2.5 text-white font-bold text-xs rounded-xl bg-gradient-to-r ${theme.bgGradient} ${theme.shadow} transition-all flex items-center gap-1.5`}
-
-              >
-
-                <ExternalLink className="w-4 h-4" />
-
-                <span>Ouvrir {automationPlatform === 'n8n' ? 'n8n' : 'Make.com'}</span>
-
-              </button>
-
-            </div>
-
-          </div>
-
-        </div>
-
-      )}
-
+            {automationStatus === 'success' ? (
+              <div className="flex flex-col items-center justify-center text-center p-4 space-y-5 animate-fadeIn">
+                <div className="w-16 h-16 rounded-full bg-emerald-500/10 border border-emerald-500/35 flex items-center justify-center text-emerald-400 shadow-lg shadow-emerald-500/15 relative">
+                  <span className="absolute inset-0 rounded-full bg-emerald-500/10 animate-ping"></span>
+                  <Check className="w-8 h-8 stroke-[3] relative z-10" />
+                </div>
+
+                <div className="space-y-1.5">
+                  <h4 className="text-base font-extrabold text-white">Votre scénario est prêt et actif !</h4>
+                  <p className="text-[11px] text-slate-400 max-w-md mx-auto leading-relaxed">
+                    L'orchestration a été injectée et configurée avec succès sur votre instance n8n.
+                    Votre client reste complètement dans l'expérience <strong>Aura</strong> pendant que l'automatisation s'exécute en arrière-plan.
+                  </p>
+                </div>
+
+                <div className="w-full bg-slate-900/40 border border-slate-850 rounded-2xl p-4 text-left space-y-3 mt-2">
+                  <div className="flex justify-between items-center text-xs pb-2 border-b border-slate-800/40">
+                    <span className="text-slate-550 font-medium">Scénario Aura</span>
+                    <span className="text-white font-bold">{activeScenario?.name}</span>
+                  </div>
+                  <div className="flex justify-between items-center text-xs pb-2 border-b border-slate-800/40">
+                    <span className="text-slate-555 font-medium">ID Workflow n8n</span>
+                    <span className="font-mono text-emerald-400 bg-emerald-400/5 px-2 py-0.5 rounded border border-emerald-500/10 font-bold">{deployedWorkflowId}</span>
+                  </div>
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-slate-555 font-medium">Statut d'exécution</span>
+                    <span className="flex items-center gap-1.5 text-emerald-400 font-bold">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                      Prêt en arrière-plan
+                    </span>
+                  </div>
+                </div>
+
+                <div className="p-3.5 bg-indigo-550/5 border border-indigo-550/10 rounded-2xl text-[11px] text-slate-400 leading-relaxed text-left flex items-start gap-2.5 w-full">
+                  <Info className="w-4 h-4 text-indigo-455 shrink-0 mt-0.5" />
+                  <span>
+                    <strong>Intégration Invisible :</strong> L'utilisateur final n'a pas besoin d'ouvrir ou de configurer le workflow sur n8n. Toutes les requêtes et les déclencheurs de production sont gérés de manière fluide et autonome par Aura.
+                  </span>
+                </div>
+
+                <div className="flex flex-col sm:flex-row justify-end gap-3 border-t border-slate-900/60 pt-4 w-full">
+                  <button
+                    onClick={() => {
+                      const configuredN8nUrl = (apiKeys["n8n_url"] || "http://localhost:5678").replace(/\/$/, "");
+                      window.open(deployedWorkflowUrl || `${configuredN8nUrl}/workflow/${deployedWorkflowId}`, '_blank');
+                    }}
+                    className="px-5 py-2.5 bg-slate-950 border border-slate-850 hover:bg-slate-900 text-slate-400 hover:text-white font-bold text-xs rounded-xl transition-all flex items-center justify-center gap-1.5"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    <span>Accéder à n8n (Avancé)</span>
+                  </button>
+                  <button
+                    onClick={() => setShowAutomationModal(false)}
+                    className={`px-6 py-2.5 text-white font-bold text-xs rounded-xl bg-gradient-to-r ${theme.bgGradient} ${theme.shadow} transition-all flex items-center justify-center gap-1.5`}
+                  >
+                    <Check className="w-4 h-4" />
+                    <span>Retourner au Tableau de Bord</span>
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                {automationError && (
+                  <div className="p-3.5 bg-amber-500/10 border border-amber-500/25 rounded-2xl text-amber-200 text-xs flex items-start gap-2.5">
+                    <AlertTriangle className="w-4.5 h-4.5 text-amber-400 shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-bold block mb-0.5">Note sur le déploiement automatique :</span>
+                      <span className="text-slate-350">{automationError}</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Platform Selector buttons */}
+                <div className="space-y-4">
+                  <div className="flex gap-4">
+                    <button
+                      onClick={() => handleSwitchAutomationPlatform('n8n')}
+                      className={`flex-1 py-3 px-4 border rounded-2xl flex flex-col items-center gap-1.5 transition-all ${
+                        automationPlatform === 'n8n'
+                          ? `${theme.bgMuted} ${theme.border} text-white shadow-lg ${theme.shadow}`
+                          : 'bg-slate-900/40 border-slate-850 text-slate-405 hover:text-slate-200'
+                      }`}
+                    >
+                      <span className="font-extrabold text-sm">Formule n8n Workflow</span>
+                      <span className="text-[10px] text-slate-500 font-medium">Copier pour paste direct (Ctrl + V) dans le canvas n8n</span>
+                    </button>
+                    <button
+                      onClick={() => handleSwitchAutomationPlatform('make')}
+                      className={`flex-1 py-3 px-4 border rounded-2xl flex flex-col items-center gap-1.5 transition-all ${
+                        automationPlatform === 'make'
+                          ? `${theme.bgMuted} ${theme.border} text-white shadow-lg ${theme.shadow}`
+                          : 'bg-slate-900/40 border-slate-850 text-slate-405 hover:text-slate-200'
+                      }`}
+                    >
+                      <span className="font-extrabold text-sm">Formule Make.com Blueprint</span>
+                      <span className="text-[10px] text-slate-500 font-medium">Import via fichier JSON blueprint sur Make</span>
+                    </button>
+                  </div>
+
+                  {/* Instructions Panel */}
+                  <div className="p-4 bg-slate-955 rounded-2xl border border-slate-850 text-slate-300 space-y-3 text-xs leading-relaxed">
+                    <h4 className="font-bold text-white flex items-center gap-1.5">
+                      <Info className={`w-4 h-4 ${theme.text}`} />
+                      <span>Comment charger le scénario ?</span>
+                    </h4>
+                    {automationPlatform === 'n8n' ? (
+                      <ol className="list-decimal list-inside space-y-1.5 pl-1 text-[11px] text-slate-350">
+                        <li>Nous avons copié le code JSON complet du workflow dans votre presse-papiers.</li>
+                        <li>Ouvrez votre instance n8n locale ou cloud (onglet ouvert en arrière-plan).</li>
+                        <li>Créez un nouveau workflow ou allez sur une page de canvas vierge.</li>
+                        <li>Cliquez n'importe où sur le fond de grille et faites simplement **Ctrl + V** (coller) !</li>
+                        <li className="text-white font-semibold">Le scénario complet (Trigger, nœuds Gemini IA, connexions logiques) se matérialisera instantanément !</li>
+                      </ol>
+                    ) : (
+                      <ol className="list-decimal list-inside space-y-1.5 pl-1 text-[11px] text-slate-350">
+                        <li>Nous avons copié le code JSON blueprint complet dans votre presse-papiers.</li>
+                        <li>Ouvrez votre console Make.com (onglet ouvert en arrière-plan).</li>
+                        <li>Créez un nouveau scénario vierge.</li>
+                        <li>Cliquez sur les trois petits points <span className="font-bold font-mono">...</span> en bas de l'écran Make, puis sélectionnez **"Import Blueprint"**.</li>
+                        <li>Collez le contenu du presse-papiers dans la zone de texte et validez l'importation.</li>
+                      </ol>
+                    )}
+                  </div>
+
+                  {/* JSON preview */}
+                  <div className="space-y-1.5">
+                    <div className="flex justify-between items-center">
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Aperçu du Scénario JSON ({automationPlatform === 'n8n' ? 'n8n' : 'Make'})</span>
+                      <button
+                        onClick={() => {
+                          copyToClipboard(automationJSON);
+                          triggerToast("✓ Code copié à nouveau !");
+                        }}
+                        className="text-[10px] text-indigo-400 hover:underline flex items-center gap-1"
+                      >
+                        <Copy className="w-3 h-3" /> Copier à nouveau
+                      </button>
+                    </div>
+                    <pre className="w-full bg-black/90 border border-slate-850 p-4 rounded-xl text-[10px] font-mono text-slate-300 max-h-44 overflow-y-auto scrollbar-thin">
+                      {automationJSON}
+                    </pre>
+                  </div>
+                </div>
+
+                {/* Modal actions */}
+                <div className="flex justify-end gap-3 border-t border-slate-900/60 pt-4">
+                  <button
+                    onClick={() => setShowAutomationModal(false)}
+                    className="px-5 py-2.5 bg-slate-950 border border-slate-850 hover:bg-slate-900 text-slate-300 font-bold text-xs rounded-xl transition-all"
+                  >
+                    Fermer & Rester sur Aura
+                  </button>
+                  <button
+                    onClick={() => {
+                      const configuredN8nUrl = (apiKeys["n8n_url"] || "http://localhost:5678").replace(/\/$/, "");
+                      const targetUrl = automationPlatform === 'make' ? 'https://www.make.com/en/login' : `${configuredN8nUrl}/`;
+                      window.open(targetUrl, '_blank');
+                    }}
+                    className={`px-6 py-2.5 text-white font-bold text-xs rounded-xl bg-gradient-to-r ${theme.bgGradient} ${theme.shadow} transition-all flex items-center gap-1.5`}
+                  >
+                    <ExternalLink className="w-4 h-4" />
+                    <span>Ouvrir {automationPlatform === 'n8n' ? 'n8n' : 'Make.com'}</span>
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Scenario Deployment Modal Overlay */}
 
       {showDeployModal && (
