@@ -4632,11 +4632,121 @@ L'objet JSON doit respecter rigoureusement cette structure :
       sendBody: true,
       specifyBody: "json",
       jsonParameters: false,
-      jsonBody: JSON.stringify({ action: step.action })
+      jsonBody: JSON.stringify({ 
+        action: step.action,
+        input_data: "={{ $json.output || $json.text || $json.message }}"
+      })
     };
 
+    // --- SPECIALIZED HTTP API ENDPOINTS FOR AURA TOOLS ---
+    
+    // Bland.ai (AI Calls)
+    if (tool.includes("bland")) {
+      type = "n8n-nodes-base.httpRequest";
+      typeVersion = 4.1;
+      parameters = {
+        url: "https://api.bland.ai/v1/calls",
+        method: "POST",
+        sendHeaders: true,
+        headerParameters: {
+          parameters: [
+            { name: "authorization", value: "YOUR_BLAND_API_KEY" }
+          ]
+        },
+        sendBody: true,
+        specifyBody: "json",
+        jsonParameters: false,
+        jsonBody: JSON.stringify({
+          phone_number: "+1234567890",
+          task: `Tâche AURA : ${step.action}`,
+          voice: "rachel",
+          input_data: {
+            previous_context: "={{ $json.output || $json.text || $json.message }}"
+          }
+        })
+      };
+    }
+    // ElevenLabs (AI Text to Speech)
+    else if (tool.includes("elevenlabs")) {
+      type = "n8n-nodes-base.httpRequest";
+      typeVersion = 4.1;
+      parameters = {
+        url: "https://api.elevenlabs.io/v1/text-to-speech/21m00Tcm4TlvDq8ikWAM",
+        method: "POST",
+        sendHeaders: true,
+        headerParameters: {
+          parameters: [
+            { name: "xi-api-key", value: "YOUR_ELEVENLABS_API_KEY" }
+          ]
+        },
+        sendBody: true,
+        specifyBody: "json",
+        jsonParameters: false,
+        jsonBody: JSON.stringify({
+          text: "={{ $json.output || $json.text || $json.message || 'Bonjour' }}",
+          model_id: "eleven_monolingual_v1",
+          voice_settings: {
+            stability: 0.5,
+            similarity_boost: 0.75
+          }
+        })
+      };
+    }
+    // Attio CRM
+    else if (tool.includes("attio")) {
+      type = "n8n-nodes-base.httpRequest";
+      typeVersion = 4.1;
+      parameters = {
+        url: "https://api.attio.com/v2/records",
+        method: "POST",
+        sendHeaders: true,
+        headerParameters: {
+          parameters: [
+            { name: "Authorization", value: "Bearer YOUR_ATTIO_TOKEN" }
+          ]
+        },
+        sendBody: true,
+        specifyBody: "json",
+        jsonParameters: false,
+        jsonBody: JSON.stringify({
+          data: {
+            values: {
+              notes: "={{ $json.output || $json.text || $json.message }}",
+              action_desc: step.action
+            }
+          }
+        })
+      };
+    }
+    // Invoice Ninja
+    else if (tool.includes("ninja") || tool.includes("invoice")) {
+      type = "n8n-nodes-base.httpRequest";
+      typeVersion = 4.1;
+      parameters = {
+        url: "https://demo.invoiceninja.com/api/v1/invoices",
+        method: "POST",
+        sendHeaders: true,
+        headerParameters: {
+          parameters: [
+            { name: "X-API-TOKEN", value: "YOUR_INVOICE_NINJA_TOKEN" }
+          ]
+        },
+        sendBody: true,
+        specifyBody: "json",
+        jsonParameters: false,
+        jsonBody: JSON.stringify({
+          client_id: "CLIENT_ID",
+          amount: 100,
+          notes: "={{ $json.output || $json.text || $json.message }}",
+          description: step.action
+        })
+      };
+    }
+
+    // --- NATIVE N8N NODES WITH DYNAMIC EXPRESSIONS ---
+
     // 1. OpenAI / Gemini / Claude / DeepSeek / IA / LLM
-    if (tool.includes("openai") || tool.includes("gpt") || tool.includes("gemini") || tool.includes("claude") || tool.includes("deepseek") || tool.includes("ia") || tool.includes("assistant")) {
+    else if (tool.includes("openai") || tool.includes("gpt") || tool.includes("gemini") || tool.includes("claude") || tool.includes("deepseek") || tool.includes("ia") || tool.includes("assistant")) {
       type = "n8n-nodes-base.openAi";
       typeVersion = 1.1;
       parameters = {
@@ -4647,11 +4757,11 @@ L'objet JSON doit respecter rigoureusement cette structure :
           messageValues: [
             {
               role: "system",
-              message: "Tu es un assistant IA spécialisé. Exécute l'action demandée."
+              message: `Tu es un assistant IA spécialisé. Ta tâche est : ${step.action}. Réponds en français.`
             },
             {
               role: "user",
-              message: step.action
+              message: "={{ $json.body || $json.text || $json.message || 'Exécuter la tâche' }}"
             }
           ]
         },
@@ -4670,7 +4780,7 @@ L'objet JSON doit respecter rigoureusement cette structure :
         operation: isRead ? "read" : "appendRow",
         spreadsheetId: {
           __rl: true,
-          value: "ID_DE_VOTRE_FEUILLE_GOOGLE",
+          value: "SPREADSHEET_ID",
           mode: "id"
         },
         sheetName: {
@@ -4678,7 +4788,17 @@ L'objet JSON doit respecter rigoureusement cette structure :
           value: "Feuille 1",
           mode: "name"
         },
-        options: {}
+        options: {},
+        ...(isRead ? {} : {
+          columns: {
+            mappingMode: "defineBelow",
+            value: {
+              date: "={{ $now }}",
+              action: step.action,
+              resultat: "={{ $json.output || $json.text || $json.message }}"
+            }
+          }
+        })
       };
     }
     // 3. Gmail / Google Email / E-mail / Outlook / Email
@@ -4691,12 +4811,12 @@ L'objet JSON doit respecter rigoureusement cette structure :
         operation: isSend ? "send" : "getAll",
         emailAs: "text",
         ...(isSend ? {
-          subject: "[AURA] Suivi automatique",
+          subject: `=AURA - Suivi automatique : ${step.action.slice(0, 30)}...`,
           emailType: "text",
-          message: step.action,
+          message: "=Bonjour,\n\nVoici le résultat généré par l'automatisation AURA :\n\n{{ $json.output || $json.text || $json.message }}\n\nCordialement,\nVotre Agent AURA",
           to: ["destinataire@example.com"]
         } : {
-          limit: 10,
+          limit: 5,
           simple: true
         })
       };
@@ -4715,7 +4835,7 @@ L'objet JSON doit respecter rigoureusement cette structure :
           mode: "name"
         },
         messageType: "text",
-        text: `[AURA] Alerte de workflow :\n${step.action}`
+        text: `=📢 *AURA Automatisation*\n*Action :* ${step.action}\n*Résultat :* {{ $json.output || $json.text || $json.message }}`
       };
     }
     // 5. Telegram / Télégramme
@@ -4726,7 +4846,7 @@ L'objet JSON doit respecter rigoureusement cette structure :
         resource: "message",
         operation: "sendMessage",
         chatId: "CHAT_ID",
-        text: `[AURA] Notification :\n${step.action}`
+        text: `=📢 *AURA Notification*\n*Action :* ${step.action}\n*Résultat :* {{ $json.output || $json.text || $json.message }}`
       };
     }
     // 6. Notion
@@ -4745,7 +4865,17 @@ L'objet JSON doit respecter rigoureusement cette structure :
           propertyValues: [
             {
               key: "Name",
-              title: step.action
+              title: `=AURA : ${step.action.slice(0, 50)}`
+            },
+            {
+              key: "Description",
+              richText: [
+                {
+                  text: {
+                    content: "={{ $json.output || $json.text || $json.message }}"
+                  }
+                }
+              ]
             }
           ]
         }
@@ -4771,8 +4901,12 @@ L'objet JSON doit respecter rigoureusement cette structure :
         columns: {
           columnValues: [
             {
-              fieldName: "Notes",
+              fieldName: "Tache",
               fieldValue: step.action
+            },
+            {
+              fieldName: "Resultat",
+              fieldValue: "={{ $json.output || $json.text || $json.message }}"
             }
           ]
         }
@@ -4785,7 +4919,7 @@ L'objet JSON doit respecter rigoureusement cette structure :
       parameters = {
         resource: "order",
         operation: "get",
-        orderId: "ORDER_ID"
+        orderId: "={{ $json.body.order_id || $json.id || 'ORDER_ID' }}"
       };
     }
     // 9. Webhook / Forms trigger
@@ -4806,8 +4940,8 @@ L'objet JSON doit respecter rigoureusement cette structure :
       parameters = {
         resource: "contact",
         operation: "create",
-        email: "email@example.com",
-        firstName: "Client",
+        email: "={{ $json.email || 'email@example.com' }}",
+        firstName: "={{ $json.firstName || 'Client' }}",
         lastName: "AURA"
       };
     }
@@ -4820,7 +4954,7 @@ L'objet JSON doit respecter rigoureusement cette structure :
         operation: "send",
         from: "SENDER_NUMBER",
         to: "RECIPIENT_NUMBER",
-        message: step.action
+        message: `=AURA : {{ $json.output || $json.text || $json.message }}`
       };
     }
     // 12. Google Calendar / Calendrier
@@ -4837,8 +4971,8 @@ L'objet JSON doit respecter rigoureusement cette structure :
         },
         start: "={{ $now }}",
         end: "={{ $now.plus({hours: 1}) }}",
-        summary: "Rendez-vous AURA",
-        description: step.action
+        summary: `Rendez-vous AURA : ${step.action.slice(0, 30)}`,
+        description: "=Liaison AURA :\n\n{{ $json.output || $json.text || $json.message }}"
       };
     }
     // 13. Google Drive / Drive
@@ -4863,7 +4997,8 @@ L'objet JSON doit respecter rigoureusement cette structure :
     let module = "gateway:custom-webhook";
     let mapper = {
       action: step.action,
-      tool: step.tool
+      tool: step.tool,
+      input_data: "{{1.output}}"
     };
 
     // 1. Gmail / Google Email
@@ -4871,8 +5006,8 @@ L'objet JSON doit respecter rigoureusement cette structure :
       const isSend = action.includes("envoyer") || action.includes("répondre") || action.includes("expédier") || action.includes("send");
       module = isSend ? "gmail:SendAnEmail" : "gmail:WatchEmails";
       mapper = isSend ? {
-        subject: "[AURA] Suivi automatique",
-        content: step.action,
+        subject: `[AURA] Suivi automatique : ${step.action.slice(0, 30)}`,
+        content: "{{1.output}}",
         to: ["destinataire@example.com"]
       } : {
         folder: "INBOX",
@@ -4891,8 +5026,9 @@ L'objet JSON doit respecter rigoureusement cette structure :
         spreadsheetId: "SPREADSHEET_ID",
         sheetName: "Feuille 1",
         values: {
-          A: "Date",
-          B: step.action
+          A: "{{now}}",
+          B: step.action,
+          C: "{{1.output}}"
         }
       };
     }
@@ -4901,7 +5037,7 @@ L'objet JSON doit respecter rigoureusement cette structure :
       module = "slack:CreateAMessage";
       mapper = {
         channel: "general",
-        text: `[AURA] Notification :\n${step.action}`
+        text: `[AURA] Notification :\n{{1.output}}`
       };
     }
     // 4. Telegram
@@ -4909,7 +5045,7 @@ L'objet JSON doit respecter rigoureusement cette structure :
       module = "telegram:SendMessage";
       mapper = {
         chatId: "CHAT_ID",
-        text: `[AURA] Notification :\n${step.action}`
+        text: `[AURA] Notification :\n{{1.output}}`
       };
     }
     // 5. Notion
@@ -4918,7 +5054,8 @@ L'objet JSON doit respecter rigoureusement cette structure :
       mapper = {
         databaseId: "DATABASE_ID",
         properties: {
-          Name: step.action
+          Name: `AURA : ${step.action.slice(0, 40)}`,
+          Content: "{{1.output}}"
         }
       };
     }
@@ -4929,7 +5066,8 @@ L'objet JSON doit respecter rigoureusement cette structure :
         baseId: "BASE_ID",
         tableId: "TABLE_NAME",
         fields: {
-          Notes: step.action
+          Tache: step.action,
+          Resultat: "{{1.output}}"
         }
       };
     }
@@ -4947,8 +5085,12 @@ L'objet JSON doit respecter rigoureusement cette structure :
         model: "gpt-4o",
         messages: [
           {
+            role: "system",
+            content: `Ta tâche est : ${step.action}`
+          },
+          {
             role: "user",
-            content: step.action
+            content: "{{1.output}}"
           }
         ]
       };
@@ -4959,7 +5101,7 @@ L'objet JSON doit respecter rigoureusement cette structure :
       mapper = {
         from: "SENDER_NUMBER",
         to: "RECIPIENT_NUMBER",
-        message: step.action
+        message: `AURA : {{1.output}}`
       };
     }
     // 10. Google Calendar / Calendrier
@@ -4967,8 +5109,8 @@ L'objet JSON doit respecter rigoureusement cette structure :
       module = "google-calendar:CreateAnEvent";
       mapper = {
         calendarId: "primary",
-        summary: "Rendez-vous AURA",
-        description: step.action,
+        summary: `Rendez-vous AURA : ${step.action.slice(0, 30)}`,
+        description: "{{1.output}}",
         startDate: "{{now}}",
         duration: 60
       };
