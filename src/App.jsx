@@ -4845,14 +4845,14 @@ L'objet JSON doit respecter rigoureusement cette structure :
         } else {
           let errorMsg = "Erreur de configuration ou réseau";
           try {
-            const errJson = await response.json();
-            errorMsg = errJson.error || errorMsg;
-          } catch (_) {
+            const errText = await response.text();
             try {
-              const errText = await response.text();
+              const errJson = JSON.parse(errText);
+              errorMsg = errJson.message || errJson.error || errorMsg;
+            } catch (_) {
               errorMsg = errText || errorMsg;
-            } catch (__) {}
-          }
+            }
+          } catch (__) {}
           console.warn("Direct deploy failed:", errorMsg);
           setAutomationError(`L'API n8n a retourné une erreur : "${errorMsg}".`);
           triggerToast("Échec du déploiement direct. Copie manuelle activée.");
