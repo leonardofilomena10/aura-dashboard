@@ -4631,12 +4631,8 @@ L'objet JSON doit respecter rigoureusement cette structure :
       method: "POST",
       sendBody: true,
       specifyBody: "json",
-      jsonParameters: true,
-      bodyParameters: {
-        parameters: [
-          { name: "action", value: step.action }
-        ]
-      }
+      jsonParameters: false,
+      jsonBody: JSON.stringify({ action: step.action })
     };
 
     // 1. OpenAI / Gemini / Claude / DeepSeek / IA / LLM
