@@ -470,9 +470,9 @@ export default function App() {
 
   const [actionMode, setActionMode] = useState('scenario');
 
-  const [gmbReviewInput, setGmbReviewInput] = useState("Le service était passable, mais l'attente a été de plus de 45 minutes pour une simple pizza Margherita. Personnel débordé.");
+  const [gmbReviewInput, setGmbReviewInput] = useState("Très satisfait des services de cette entreprise, prestation de qualité et personnel professionnel. Je recommande vivement.");
 
-  const [gmbLocation, setGmbLocation] = useState("Votre Entreprise Cible");
+  const [gmbLocation, setGmbLocation] = useState("");
 
   const [gmbSentiment, setGmbSentiment] = useState("diplomatic");
 
@@ -567,42 +567,6 @@ export default function App() {
 
   const [gmbProfiles, setGmbProfiles] = useState(() => {
 
-    const defaultProfile = [
-
-      {
-
-        id: 'prof-default',
-
-        email: 'contact@votreentreprise.fr',
-
-        location: 'Votre Entreprise Cible',
-
-        category: 'Services',
-
-        address: '123 Avenue des Entrepreneurs, 75008 Paris',
-
-        phone: '01 00 00 00 00',
-
-        website: 'https://votreentreprise.fr',
-
-        siret: '12345678901234',
-
-        autoReply: true,
-
-        rating: 5.0,
-
-        totalReviews: 0,
-
-        pendingReviews: 0,
-
-        status: 'active',
-
-        connectionStatus: 'disconnected'
-
-      }
-
-    ];
-
     try {
 
       const saved = localStorage.getItem('aura_gmb_profiles');
@@ -611,9 +575,25 @@ export default function App() {
 
         const parsed = JSON.parse(saved);
 
-        if (Array.isArray(parsed) && parsed.length > 0 && parsed[0]) {
+        if (Array.isArray(parsed)) {
 
-          return [parsed[0]];
+          const filtered = parsed.filter(p => 
+
+            p && 
+
+            p.location && 
+
+            !p.location.toLowerCase().includes('pizzeria') && 
+
+            !p.location.toLowerCase().includes('votre entreprise cible') &&
+
+            p.id !== 'prof-default' &&
+
+            p.id !== 'prof-1'
+
+          );
+
+          return filtered;
 
         }
 
@@ -625,7 +605,7 @@ export default function App() {
 
     }
 
-    return defaultProfile;
+    return [];
 
   });
 
@@ -935,7 +915,13 @@ export default function App() {
 
     const saved = localStorage.getItem('aura_active_profile_id');
 
-    return saved || 'prof-1';
+    if (saved && saved !== 'prof-1' && saved !== 'prof-default') {
+
+      return saved;
+
+    }
+
+    return '';
 
   });
 
@@ -946,6 +932,10 @@ export default function App() {
     if (gmbProfiles.length > 0 && !gmbProfiles.some(p => p.id === activeProfileId)) {
 
       setActiveProfileId(gmbProfiles[0].id);
+
+    } else if (gmbProfiles.length === 0 && activeProfileId !== '') {
+
+      setActiveProfileId('');
 
     }
 
@@ -1992,13 +1982,13 @@ Restons en contact pour configurer votre essai gratuit de 14 jours !`;
 
     'prof-1': [
 
-      { id: 'rev-1', author: 'Jean Dupont', time: 'Il y a 2 heures', rating: 5, sentiment: 'positive', text: "Les pizzas sont excellentes, la pâte est fine et croustillante ! Accueil très chaleureux. Je recommande à 100%." },
+      { id: 'rev-1', author: 'Jean Dupont', time: 'Il y a 2 heures', rating: 5, sentiment: 'positive', text: "Le pain et les viennoiseries sont excellents, la croûte est bien croustillante ! Accueil très chaleureux. Je recommande à 100%." },
 
-      { id: 'rev-2', author: 'Marie Martin', time: 'Il y a 1 jour', rating: 4, sentiment: 'positive', text: "Service un peu long un samedi soir, mais la qualité des plats fait oublier l'attente. Tiramisu maison délicieux." },
+      { id: 'rev-2', author: 'Marie Martin', time: 'Il y a 1 jour', rating: 4, sentiment: 'positive', text: "File d'attente un peu longue le dimanche matin, mais la qualité des produits fait oublier l'attente. Flans maison délicieux." },
 
-      { id: 'rev-3', author: 'Pierre Lambert', time: 'Il y a 3 jours', rating: 2, sentiment: 'negative', text: "Déçu par la pizza Reine, trop salée à mon goût. De plus, le livreur est arrivé avec 20 minutes de retard." },
+      { id: 'rev-3', author: 'Pierre Lambert', time: 'Il y a 3 jours', rating: 2, sentiment: 'negative', text: "Déçu par le pain de campagne, trop cuit à mon goût. De plus, l'accueil était un peu froid ce jour-là." },
 
-      { id: 'rev-4', author: 'Sophie Bernard', time: 'Il y a 1 semaine', rating: 5, sentiment: 'positive', text: "Une vraie pizzeria napolitaine dans le 11e. La pizza Burrata est à tomber par terre. Service rapide." }
+      { id: 'rev-4', author: 'Sophie Bernard', time: 'Il y a 1 semaine', rating: 5, sentiment: 'positive', text: "Une vraie boulangerie artisanale de quartier. La tartelette aux fraises est à tomber par terre. Service rapide." }
 
     ],
 

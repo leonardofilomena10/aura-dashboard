@@ -32,7 +32,7 @@ export default function GiftTab({
               <label className="block text-xs font-bold uppercase text-slate-400 mb-1.5">Nom du client récipiendaire</label>
               <input
                 type="text"
-                placeholder="Ex: Pizzeria Bella, Paris 11"
+                placeholder="Ex: Boulangerie Gourmande, Paris 11"
                 value={giftRecipient}
                 onChange={(e) => setGiftRecipient(e.target.value)}
                 className="w-full bg-slate-900 border border-slate-800 rounded-xl px-4 py-2.5 text-slate-200 text-xs focus:outline-none"

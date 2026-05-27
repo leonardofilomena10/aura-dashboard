@@ -2,7 +2,7 @@ import React from 'react';
 import { 
   UserCheck, Mail, RotateCw, ShieldCheck, Globe, 
   MapPin, Phone, Settings, Plus, PlusCircle, 
-  Sliders, Play, X 
+  Sliders, Play, X, Building
 } from 'lucide-react';
 
 export default function ProfilesTab({
@@ -146,7 +146,7 @@ export default function ProfilesTab({
             <div className="flex gap-2">
               <input
                 type="text"
-                placeholder="Ex: Pizzeria Napoli Lyon, SIRET, 014268..."
+                placeholder="Ex: Boulangerie Gourmande Lyon, SIRET, 014268..."
                 value={placeSearchQuery}
                 onChange={(e) => setPlaceSearchQuery(e.target.value)}
                 className="flex-1 bg-slate-900 border border-slate-800 rounded-xl px-3.5 py-2 text-slate-200 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500/50"
@@ -340,7 +340,7 @@ export default function ProfilesTab({
                   <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">Nom du commerce</label>
                   <input
                     type="text"
-                    placeholder="Ex: Bella Ciao"
+                    placeholder="Ex: Boulangerie Gourmande"
                     value={newProfileLocation}
                     onChange={(e) => setNewProfileLocation(e.target.value)}
                     className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3.5 py-2 text-slate-200 text-xs focus:outline-none"

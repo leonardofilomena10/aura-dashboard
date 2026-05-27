@@ -161,7 +161,7 @@ export default function ScenariosTab({
                     <div className="space-y-1">
                       <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">Signature de Réponse</label>
                       <textarea
-                        placeholder="Ex: L'équipe de Pizzeria Bella 🍕"
+                        placeholder="Ex: L'équipe de la Boulangerie Gourmande 🥖"
                         value={activeVoice.signature || ''}
                         onChange={(e) => handleUpdateBrandVoice('signature', e.target.value)}
                         rows={2}

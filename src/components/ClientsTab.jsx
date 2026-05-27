@@ -207,7 +207,7 @@ export default function ClientsTab({
                   <input
                     type="text"
                     required
-                    placeholder="Ex: Pizzeria Napoli"
+                    placeholder="Ex: Boulangerie Gourmande"
                     value={newClientName}
                     onChange={(e) => setNewClientName(e.target.value)}
                     className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-slate-200 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500/50"
