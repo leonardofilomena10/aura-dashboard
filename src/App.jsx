@@ -468,11 +468,11 @@ export default function App() {
 
   // Live Action Workspace (Terminal IA réel)
 
-  const [actionMode, setActionMode] = useState('gmb');
+  const [actionMode, setActionMode] = useState('scenario');
 
   const [gmbReviewInput, setGmbReviewInput] = useState("Le service était passable, mais l'attente a été de plus de 45 minutes pour une simple pizza Margherita. Personnel débordé.");
 
-  const [gmbLocation, setGmbLocation] = useState("Pizzeria Bella, Paris 11");
+  const [gmbLocation, setGmbLocation] = useState("Votre Entreprise Cible");
 
   const [gmbSentiment, setGmbSentiment] = useState("diplomatic");
 
@@ -571,27 +571,27 @@ export default function App() {
 
       {
 
-        id: 'prof-1',
+        id: 'prof-default',
 
-        email: 'contact@pizzeriabella.fr',
+        email: 'contact@votreentreprise.fr',
 
-        location: 'Pizzeria Bella, Paris 11',
+        location: 'Votre Entreprise Cible',
 
-        category: 'Restauration',
+        category: 'Services',
 
-        address: '14 Rue de la Roquette, 75011 Paris',
+        address: '123 Avenue des Entrepreneurs, 75008 Paris',
 
-        phone: '01 43 57 89 12',
+        phone: '01 00 00 00 00',
 
-        website: 'https://pizzeriabella.fr',
+        website: 'https://votreentreprise.fr',
 
-        siret: '48293049200021',
+        siret: '12345678901234',
 
         autoReply: true,
 
-        rating: 4.6,
+        rating: 5.0,
 
-        totalReviews: 142,
+        totalReviews: 0,
 
         pendingReviews: 0,
 
@@ -1109,7 +1109,7 @@ export default function App() {
 
     const defaultVoices = {
 
-      'prof-1': { tone: 'humoristique', emojiUsage: 'eleved', tabooWords: ['désolé', 'regretter'], signature: 'L\'équipe de Pizzeria Bella 🍕' },
+      'prof-default': { tone: 'professionnel', emojiUsage: 'moyen', tabooWords: ['désolé'], signature: 'L\'équipe de Votre Entreprise' },
 
       'prof-2': { tone: 'formel', emojiUsage: 'aucun', tabooWords: ['excuse', 'pardon'], signature: 'Le Service Technique Plomberie Lyon Express' }
 
@@ -6627,6 +6627,9 @@ L'objet JSON doit respecter rigoureusement cette structure :
         {/* Global Active Target Company Card */}
 
         {(() => {
+
+          const isGoogleContext = activeTab === 'profiles' || (activeTab === 'live-action' && actionMode === 'gmb');
+          if (!isGoogleContext) return null;
 
           const activeProf = gmbProfiles.find(p => p.id === activeProfileId) || gmbProfiles[0];
 
