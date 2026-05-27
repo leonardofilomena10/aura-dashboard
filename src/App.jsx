@@ -512,6 +512,27 @@ export default function App() {
 
     defaultKeys["googleClientSecret"] = "";
 
+    const envKeys = {
+      "gemini-omni": import.meta.env.VITE_GEMINI_API_KEY || "",
+      "gpt-4o": import.meta.env.VITE_OPENAI_API_KEY || "",
+      "claude-3-5": import.meta.env.VITE_CLAUDE_API_KEY || "",
+      "perplexity": import.meta.env.VITE_PERPLEXITY_API_KEY || "",
+      "groq": import.meta.env.VITE_GROQ_API_KEY || "",
+      "deepseek-r1": import.meta.env.VITE_DEEPSEEK_API_KEY || "",
+      "elevenlabs": import.meta.env.VITE_ELEVENLABS_API_KEY || "",
+      "n8n": import.meta.env.VITE_N8N_API_KEY || "",
+      "n8n_url": import.meta.env.VITE_N8N_URL || "",
+      "airtable": import.meta.env.VITE_AIRTABLE_TOKEN || "",
+      "notion": import.meta.env.VITE_NOTION_TOKEN || "",
+      "telegram": import.meta.env.VITE_TELEGRAM_BOT_TOKEN || "",
+      "stability-ai": import.meta.env.VITE_STABILITY_API_KEY || "",
+      "linear": import.meta.env.VITE_LINEAR_API_KEY || "",
+      "stripe": import.meta.env.VITE_STRIPE_API_KEY || "",
+      "make": import.meta.env.VITE_MAKE_API_KEY || "",
+      "googleClientId": import.meta.env.VITE_GOOGLE_CLIENT_ID || "",
+      "googleClientSecret": import.meta.env.VITE_GOOGLE_CLIENT_SECRET || ""
+    };
+
     try {
 
       const saved = localStorage.getItem('aura_api_keys');
@@ -522,7 +543,13 @@ export default function App() {
 
         if (parsed && typeof parsed === 'object') {
 
-          return { ...defaultKeys, ...parsed };
+          const merged = { ...defaultKeys, ...envKeys };
+          Object.keys(parsed).forEach(k => {
+            if (parsed[k] !== undefined && parsed[k] !== "") {
+              merged[k] = parsed[k];
+            }
+          });
+          return merged;
 
         }
 
@@ -534,7 +561,7 @@ export default function App() {
 
     }
 
-    return defaultKeys;
+    return { ...defaultKeys, ...envKeys };
 
   });
 
