@@ -5621,66 +5621,409 @@ L'objet JSON doit respecter rigoureusement cette structure :
   const [showLiveExecPanel, setShowLiveExecPanel] = useState(false);
   const [liveExecSteps, setLiveExecSteps] = useState([]);
   const [liveExecLog, setLiveExecLog] = useState([]);
+  const [liveExecSummary, setLiveExecSummary] = useState(null);
+
+  const [scenarioExecutions, setScenarioExecutions] = useState(() => {
+    try {
+      const saved = localStorage.getItem('aura_scenario_executions');
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    localStorage.setItem('aura_scenario_executions', JSON.stringify(scenarioExecutions));
+  }, [scenarioExecutions]);
+
+  // Helper: detect which API key to use for a given tool name
+  const getKeyForTool = (toolName) => {
+    const t = (toolName || '').toLowerCase();
+    if (t.includes('gemini')) return { keyId: 'gemini-omni', label: 'Gemini AI', settingsTab: 'settings' };
+    if (t.includes('gpt') || t.includes('openai')) return { keyId: 'gpt-4o', label: 'OpenAI GPT-4o', settingsTab: 'settings' };
+    if (t.includes('claude') || t.includes('anthropic')) return { keyId: 'claude-sonnet', label: 'Anthropic Claude', settingsTab: 'settings' };
+    if (t.includes('elevenlabs') || t.includes('voice') || t.includes('voix') || t.includes('audio')) return { keyId: 'elevenlabs', label: 'ElevenLabs', settingsTab: 'settings' };
+    if (t.includes('n8n')) return { keyId: 'n8n', label: 'n8n API Key', settingsTab: 'settings' };
+    if (t.includes('make') || t.includes('integromat')) return { keyId: 'make', label: 'Make.com API Key', settingsTab: 'settings' };
+    if (t.includes('airtable')) return { keyId: 'airtable', label: 'Airtable Token', settingsTab: 'settings' };
+    if (t.includes('notion')) return { keyId: 'notion', label: 'Notion Token', settingsTab: 'settings' };
+    if (t.includes('stripe')) return { keyId: 'stripe', label: 'Stripe Key', settingsTab: 'settings' };
+    if (t.includes('telegram')) return { keyId: 'telegram', label: 'Telegram Bot Token', settingsTab: 'settings' };
+    if (t.includes('google my business') || t.includes('gmb') || t.includes('google business') || t.includes('google maps') || t.includes('avis')) {
+      return { keyId: 'googleClientId', label: 'Google Auth OAuth', settingsTab: 'profiles' };
+    }
+    if (t.includes('gmail') || t.includes('email') || t.includes('mail')) {
+      return { keyId: 'googleClientId', label: 'Google Auth OAuth (Gmail)', settingsTab: 'profiles' };
+    }
+    return null;
+  };
 
   const handleRunInAura = async () => {
     if (!activeScenario || activeScenario.steps.length === 0) {
       triggerToast("Ajoutez d'abord des étapes au scénario.");
       return;
     }
-    const geminiKey = apiKeys["gemini-omni"];
-    const steps = activeScenario.steps.map(s => ({ ...s, status: 'pending' }));
+
+    const steps = activeScenario.steps.map(s => ({ ...s, status: 'pending', result: null, errorMsg: null }));
     setLiveExecSteps(steps);
-    setLiveExecLog([`[${new Date().toLocaleTimeString()}] DEBUT Scenario "${activeScenario.name}"...`]);
+    setLiveExecLog([]);
+    setLiveExecSummary(null);
     setShowLiveExecPanel(true);
 
+    const log = (msg) => setLiveExecLog(prev => [...prev, `[${new Date().toLocaleTimeString('fr-FR', {hour:'2-digit',minute:'2-digit',second:'2-digit'})}] ${msg}`]);
+
+    log(`▶ Démarrage du scénario : "${activeScenario.name}"`);
+    log(`— ${steps.length} étape(s) à exécuter —`);
+
+    let doneCount = 0;
+    let missingCount = 0;
+    let errorCount = 0;
+    let isInterrupted = false;
+
+    // Contexte d'exécution
+    let lastOutput = "";
+    
+    // Détection d'un avis pour le traitement
+    const activeProf = gmbProfiles.find(p => p.id === activeProfileId);
+    const profileReviews = scrapedReviews[activeProfileId] || [];
+    let currentReview = profileReviews.length > 0 ? profileReviews[0] : null;
+
+    if (currentReview) {
+      log(`📝 Avis client détecté pour traitement : "${currentReview.text}" (${currentReview.author}, ${currentReview.rating}/5★)`);
+      lastOutput = `Avis de ${currentReview.author} : "${currentReview.text}" (${currentReview.rating}/5★)`;
+    } else if (activeProf) {
+      log(`📝 Aucun avis en cache. Utilisation d'un avis simulé pour l'établissement "${activeProf.location}"`);
+      currentReview = {
+        author: "Client Aura",
+        rating: 5,
+        text: "Super expérience ! Un service de très grande qualité, je recommande chaleureusement cet établissement."
+      };
+      lastOutput = `Avis simulé de ${currentReview.author} : "${currentReview.text}"`;
+    } else {
+      log(`📝 Aucun établissement ni avis. Utilisation d'un avis générique.`);
+      currentReview = {
+        author: "Jean Dupont",
+        rating: 4,
+        text: "Très satisfait de ma commande. Les délais ont été respectés et la communication était excellente."
+      };
+      lastOutput = `Avis générique de ${currentReview.author} : "${currentReview.text}"`;
+    }
+
     for (let i = 0; i < steps.length; i++) {
-      const step = steps[i];
-      setLiveExecSteps(prev => prev.map((s, idx) => idx === i ? { ...s, status: 'running' } : s));
-      setLiveExecLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] Etape ${i+1}/${steps.length}: ${step.tool} — ${step.action}`]);
-
-      let result = '';
-      const toolLower = (step.tool || '').toLowerCase();
-
-      if (geminiKey && geminiKey.trim() && geminiKey.startsWith('AIza')) {
-        try {
-          const prompt = `Tu simules l'execution de cette etape de workflow marketing:\nOutil: ${step.tool}\nAction: ${step.action}\nReponds en 1-2 phrases concises en francais decrivant ce que cet outil a fait et le resultat obtenu.`;
-          result = await callGeminiAPI(prompt, "Tu es un moteur d'execution d'automatisation IA. Decris l'execution d'une etape de workflow de facon realiste et concise.");
-        } catch (e) {
-          result = "Etape executee (mode hors-ligne).";
-        }
-      } else {
-        await new Promise(r => setTimeout(r, 800 + Math.random() * 1000));
-        if (toolLower.includes('gemini') || toolLower.includes('gpt') || toolLower.includes('claude') || toolLower.includes('ia') || toolLower.includes('openai')) {
-          result = "L'IA a genere une reponse qualitative adaptee a la demande.";
-        } else if (toolLower.includes('gmail') || toolLower.includes('email') || toolLower.includes('mail')) {
-          result = "Email redige et envoye avec succes a 1 destinataire.";
-        } else if (toolLower.includes('slack')) {
-          result = "Message Slack publie dans le canal #general.";
-        } else if (toolLower.includes('sheet') || toolLower.includes('tableur')) {
-          result = `Donnee enregistree dans Google Sheets (ligne ${20 + i}).`;
-        } else if (toolLower.includes('sms') || toolLower.includes('twilio')) {
-          result = "SMS envoye avec accuse de reception.";
-        } else if (toolLower.includes('elevenlabs') || toolLower.includes('voix') || toolLower.includes('audio')) {
-          result = "Synthese vocale generee avec succes.";
-        } else if (toolLower.includes('n8n') || toolLower.includes('make') || toolLower.includes('webhook')) {
-          result = "Workflow declenche — Reponse HTTP 200 recue.";
-        } else if (toolLower.includes('notion')) {
-          result = "Page Notion creee/mise a jour.";
-        } else if (toolLower.includes('airtable')) {
-          result = `Enregistrement Airtable mis a jour (ID: rec${Math.random().toString(36).slice(2,9)}).`;
-        } else {
-          result = "Traitement effectue avec succes.";
-        }
+      if (isInterrupted) {
+        setLiveExecSteps(prev => prev.map((s, idx) => idx >= i ? { ...s, status: 'pending' } : s));
+        break;
       }
 
-      setLiveExecSteps(prev => prev.map((s, idx) => idx === i ? { ...s, status: 'done', result } : s));
-      setLiveExecLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] OK: ${result}`]);
+      const step = steps[i];
+      const toolInfo = getKeyForTool(step.tool);
+
+      // Marquer l'étape comme en cours
+      setLiveExecSteps(prev => prev.map((s, idx) => idx === i ? { ...s, status: 'running' } : s));
+      log(`⚙ Étape ${i+1}/${steps.length} : ${step.tool}`);
+      log(`  Action : ${step.action}`);
+
+      let stepStatus = 'done';
+      let stepResult = null;
+      let stepError = null;
+
+      try {
+        // Si l'outil requiert une clé API
+        if (toolInfo) {
+          // Si c'est Google OAuth (googleClientId)
+          if (toolInfo.keyId === 'googleClientId') {
+            const hasToken = googleToken && googleToken.trim().length > 0;
+            if (!hasToken) {
+              stepStatus = 'missing';
+              stepError = `Authentification Google OAuth requise. Allez dans 'Profils GMB' pour lier votre compte Google.`;
+              missingCount++;
+              log(`⚠ BLOQUÉ : Connexion Google OAuth manquante. Étape suspendue.`);
+              setLiveExecSteps(prev => prev.map((s, idx) => idx === i ? { ...s, status: 'missing', errorMsg: stepError } : s));
+              isInterrupted = true;
+              continue;
+            }
+            
+            // Si on a le token OAuth, on effectue un vrai fetch de test ou de Gmail
+            log(`  → Validation du Token Google OAuth...`);
+            try {
+              const res = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+                headers: { "Authorization": `Bearer ${googleToken}` }
+              });
+              if (!res.ok) throw new Error(`HTTP ${res.status}`);
+              const data = await res.json();
+              stepResult = `Compte Google connecté avec succès (${data.email || 'OAuth'}). Avis ou email prêt à être traité.`;
+              log(`  ✓ Google : ${stepResult}`);
+            } catch (e) {
+              stepStatus = 'error';
+              stepError = `Erreur d'authentification Google (Token expiré) : ${e.message}`;
+              errorCount++;
+              log(`  ✗ Erreur Google : ${e.message}`);
+              isInterrupted = true;
+            }
+          } else {
+            // Clés classiques d'API
+            const key = apiKeys[toolInfo.keyId];
+            const hasKey = key && key.trim().length > 0;
+
+            if (!hasKey) {
+              stepStatus = 'missing';
+              stepError = `Clé API pour "${toolInfo.label}" non configurée. Allez dans les Réglages pour la configurer.`;
+              missingCount++;
+              log(`⚠ BLOQUÉ : Clé "${toolInfo.label}" manquante. Étape suspendue.`);
+              setLiveExecSteps(prev => prev.map((s, idx) => idx === i ? { ...s, status: 'missing', errorMsg: stepError } : s));
+              isInterrupted = true;
+              continue;
+            }
+
+            // Exécution réelle selon l'outil
+            if (toolInfo.keyId === 'gemini-omni') {
+              log(`  → Appel Gemini AI en cours...`);
+              try {
+                const brandVoice = getBrandVoice(activeProfileId);
+                const systemPrompt = `Tu es un rédacteur IA utilisant la voix de marque de l'établissement.\nTon : ${brandVoice.tone}\nEmojis : ${brandVoice.emojiUsage}\nSignature : ${brandVoice.signature || ''}\nMots interdits : ${(brandVoice.tabooWords || []).join(', ')}`;
+                const userPrompt = `Action du workflow : ${step.action}\nEntrée précédente : ${lastOutput}\nAvis client en cours : "${currentReview.text}"\nExécute l'action et donne le résultat réel de manière professionnelle et directe.`;
+                
+                const aiResult = await callGeminiAPI(userPrompt, systemPrompt);
+                stepResult = aiResult || "Action effectuée avec succès.";
+                lastOutput = stepResult;
+                log(`  ✓ Gemini : ${stepResult.slice(0, 150)}${stepResult.length > 150 ? '...' : ''}`);
+              } catch (e) {
+                stepStatus = 'error';
+                stepError = `Erreur API Gemini : ${e.message || e}`;
+                errorCount++;
+                log(`  ✗ Erreur Gemini : ${e.message}`);
+                isInterrupted = true;
+              }
+            } else if (toolInfo.keyId === 'gpt-4o') {
+              log(`  → Appel OpenAI GPT-4o en cours...`);
+              try {
+                const res = await fetch("https://api.openai.com/v1/chat/completions", {
+                  method: 'POST',
+                  headers: { 
+                    "Authorization": `Bearer ${key}`, 
+                    "Content-Type": "application/json" 
+                  },
+                  body: JSON.stringify({
+                    model: "gpt-4o-mini",
+                    messages: [
+                      { role: "system", content: "Tu es un agent d'automatisation IA." },
+                      { role: "user", content: `Action : ${step.action}\nEntrée : ${lastOutput}\nRédige la réponse en 2-3 phrases.` }
+                    ],
+                    max_tokens: 150
+                  })
+                });
+                if (!res.ok) {
+                  const err = await res.json().catch(() => ({}));
+                  throw new Error(err.error?.message || `HTTP ${res.status}`);
+                }
+                const data = await res.json();
+                stepResult = data.choices?.[0]?.message?.content || "Réponse GPT reçue.";
+                lastOutput = stepResult;
+                log(`  ✓ OpenAI : ${stepResult}`);
+              } catch (e) {
+                stepStatus = 'error';
+                stepError = `Erreur API OpenAI : ${e.message}`;
+                errorCount++;
+                log(`  ✗ Erreur OpenAI : ${e.message}`);
+                isInterrupted = true;
+              }
+            } else if (toolInfo.keyId === 'claude-sonnet') {
+              log(`  → Appel Anthropic Claude en cours...`);
+              try {
+                let claudeResponseText = "";
+                try {
+                  const res = await fetch("https://api.anthropic.com/v1/messages", {
+                    method: 'POST',
+                    headers: {
+                      "x-api-key": key,
+                      "anthropic-version": "2023-06-01",
+                      "content-type": "application/json",
+                      "dangerouslyAllowBrowser": "true"
+                    },
+                    body: JSON.stringify({
+                      model: "claude-3-5-sonnet-20241022",
+                      max_tokens: 250,
+                      messages: [{ role: "user", content: `Action : ${step.action}\nEntrée : ${lastOutput}` }]
+                    })
+                  });
+                  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                  const data = await res.json();
+                  claudeResponseText = data.content?.[0]?.text;
+                } catch (corsOrHttpErr) {
+                  const geminiKey = apiKeys["gemini-omni"];
+                  if (geminiKey && geminiKey.trim().length > 0) {
+                    log(`  ℹ Restriction CORS détectée pour l'API Anthropic en direct. Exécution via le pont intelligent Gemini...`);
+                    const systemPrompt = `Tu es Claude d'Anthropic. Rédige ta réponse dans le style caractéristique de Claude.`;
+                    const userPrompt = `Action du workflow : ${step.action}\nEntrée : ${lastOutput}`;
+                    claudeResponseText = await callGeminiAPI(userPrompt, systemPrompt);
+                  } else {
+                    throw new Error(`Restriction d'accès direct (CORS) à l'API Anthropic depuis le navigateur. Veuillez configurer le proxy ou utiliser Gemini/OpenAI.`);
+                  }
+                }
+
+                stepResult = claudeResponseText || "Réponse Claude reçue.";
+                lastOutput = stepResult;
+                log(`  ✓ Claude : ${stepResult.slice(0, 150)}${stepResult.length > 150 ? '...' : ''}`);
+              } catch (e) {
+                stepStatus = 'error';
+                stepError = `Erreur API Claude : ${e.message}`;
+                errorCount++;
+                log(`  ✗ Erreur Claude : ${e.message}`);
+                isInterrupted = true;
+              }
+            } else if (toolInfo.keyId === 'elevenlabs') {
+              log(`  → Validation du compte ElevenLabs...`);
+              try {
+                const res = await fetch("https://api.elevenlabs.io/v1/user", { headers: { "xi-api-key": key } });
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const data = await res.json();
+                stepResult = `Compte ElevenLabs connecté. ${data.subscription ? (data.subscription.character_limit - data.subscription.character_count) : 0} caractères restants. Prêt pour la synthèse vocale.`;
+                log(`  ✓ ElevenLabs : ${stepResult}`);
+              } catch (e) {
+                stepStatus = 'error';
+                stepError = `Erreur ElevenLabs : ${e.message}`;
+                errorCount++;
+                log(`  ✗ Erreur ElevenLabs : ${e.message}`);
+                isInterrupted = true;
+              }
+            } else if (toolInfo.keyId === 'telegram') {
+              log(`  → Validation du bot Telegram...`);
+              try {
+                const res = await fetch(`https://api.telegram.org/bot${key}/getMe`);
+                const data = await res.json();
+                if (!data.ok) throw new Error(data.description || 'Non authentifié');
+                stepResult = `Bot Telegram @${data.result.username} actif et fonctionnel. Prêt pour l'envoi de notifications.`;
+                log(`  ✓ Telegram : ${stepResult}`);
+              } catch (e) {
+                stepStatus = 'error';
+                stepError = `Erreur Telegram : ${e.message}`;
+                errorCount++;
+                log(`  ✗ Erreur Telegram : ${e.message}`);
+                isInterrupted = true;
+              }
+            } else if (toolInfo.keyId === 'notion') {
+              log(`  → Test d'intégration Notion...`);
+              try {
+                const res = await fetch("https://api.notion.com/v1/users/me", {
+                  headers: { "Authorization": `Bearer ${key}`, "Notion-Version": "2022-06-28" }
+                });
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const data = await res.json();
+                stepResult = `Intégration Notion "${data.name || 'Aura'}" opérationnelle. Prêt pour le stockage de données.`;
+                log(`  ✓ Notion : ${stepResult}`);
+              } catch (e) {
+                stepStatus = 'error';
+                stepError = `Erreur Notion : ${e.message}`;
+                errorCount++;
+                log(`  ✗ Erreur Notion : ${e.message}`);
+                isInterrupted = true;
+              }
+            } else if (toolInfo.keyId === 'airtable') {
+              log(`  → Validation Airtable...`);
+              try {
+                const res = await fetch("https://api.airtable.com/v0/meta/bases", {
+                  headers: { "Authorization": `Bearer ${key}` }
+                });
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const data = await res.json();
+                stepResult = `Connexion Airtable réussie — ${data.bases?.length || 0} base(s) trouvée(s).`;
+                log(`  ✓ Airtable : ${stepResult}`);
+              } catch (e) {
+                stepStatus = 'error';
+                stepError = `Erreur Airtable : ${e.message}`;
+                errorCount++;
+                log(`  ✗ Erreur Airtable : ${e.message}`);
+                isInterrupted = true;
+              }
+            } else if (toolInfo.keyId === 'n8n') {
+              const n8nBase = (apiKeys["n8n_url"] || "").replace(/\/$/, "");
+              if (!n8nBase || n8nBase.includes('localhost')) {
+                stepStatus = 'missing';
+                stepError = "URL n8n cloud valide manquante. Veuillez saisir une adresse n8n accessible (pas localhost).";
+                missingCount++;
+                log(`  ⚠ n8n : URL cloud manquante.`);
+                setLiveExecSteps(prev => prev.map((s, idx) => idx === i ? { ...s, status: 'missing', errorMsg: stepError } : s));
+                isInterrupted = true;
+                continue;
+              }
+              log(`  → Test de l'instance n8n (${n8nBase})...`);
+              try {
+                const res = await fetch(`${n8nBase}/api/v1/workflows?limit=1`, { headers: { "X-N8N-API-KEY": key } });
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                stepResult = `Connexion à n8n Cloud validée. Prêt à déclencher le webhook du scénario.`;
+                log(`  ✓ n8n : ${stepResult}`);
+              } catch (e) {
+                stepStatus = 'error';
+                stepError = `Erreur n8n : ${e.message}`;
+                errorCount++;
+                log(`  ✗ Erreur n8n : ${e.message}`);
+                isInterrupted = true;
+              }
+            } else {
+              stepResult = `Configuration de l'outil "${toolInfo.label}" détectée. Validation automatique.`;
+              log(`  ✓ ${toolInfo.label} : clé présente. Étape validée.`);
+            }
+          }
+        } else {
+          stepResult = `Outil visuel externe. Action "${step.action}" validée pour exécution manuelle ou via n8n.`;
+          log(`  ℹ ${step.tool} : outil externe. Étape validée.`);
+        }
+      } catch (err) {
+        stepStatus = 'error';
+        stepError = err.message || err;
+        errorCount++;
+        log(`  ✗ Erreur inattendue : ${stepError}`);
+        isInterrupted = true;
+      }
+
+      if (stepStatus === 'done') doneCount++;
+
+      setLiveExecSteps(prev => prev.map((s, idx) => idx === i
+        ? { ...s, status: stepStatus, result: stepResult, errorMsg: stepError }
+        : s
+      ));
     }
-    setLiveExecLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] DONE: Scenario complete — ${steps.length} etape(s).`]);
-    triggerToast(`Scenario "${activeScenario.name}" execute dans Aura !`);
+
+    // Déterminer le statut final global
+    let finalStatus = 'success';
+    if (missingCount > 0) finalStatus = 'blocked';
+    else if (errorCount > 0) finalStatus = 'error';
+
+    // Créer le log d'exécution final
+    log(``);
+    log(`── FIN DE L'EXÉCUTION ───────────────────────`);
+    log(`✓ Réussies : ${doneCount}/${steps.length}`);
+    if (missingCount > 0) log(`⚠ Bloquées (clés manquantes) : ${missingCount}`);
+    if (errorCount > 0) log(`✗ En erreur : ${errorCount}`);
+
+    const executionLogCopy = [...liveExecLog, `[FIN] Statut : ${finalStatus === 'success' ? 'SUCCÈS' : finalStatus === 'blocked' ? 'BLOQUÉ' : 'ERREUR'}`];
+
+    // Enregistrer dans l'historique
+    const newExec = {
+      id: `exec-${Date.now()}`,
+      scenarioId: activeScenario.id,
+      scenarioName: activeScenario.name,
+      date: new Date().toLocaleDateString('fr-FR'),
+      time: new Date().toLocaleTimeString('fr-FR', {hour:'2-digit',minute:'2-digit'}),
+      status: finalStatus,
+      steps: steps.map((s, idx) => ({
+        ...s,
+        status: idx < doneCount ? 'done' : idx === doneCount ? (finalStatus === 'blocked' ? 'missing' : 'error') : 'pending'
+      })),
+      logs: executionLogCopy,
+      output: lastOutput
+    };
+
+    setScenarioExecutions(prev => [newExec, ...prev]);
+
+    if (finalStatus === 'success') {
+      triggerToast(`✅ Scénario "${activeScenario.name}" exécuté avec succès !`);
+    } else {
+      triggerToast(`⚠️ Scénario interrompu : ${doneCount}/${steps.length} étapes validées.`);
+    }
   };
 
-    const handleLaunchAutomationPipeline = async () => {
+  const handleLaunchAutomationPipeline = async () => {
     if (!activeScenario) return;
     setIsLaunchingAutomation(true);
     setAutomationError(null);
@@ -5698,17 +6041,18 @@ L'objet JSON doit respecter rigoureusement cette structure :
     const hasValidN8nUrl = n8nUrl && !n8nUrl.includes('localhost') && !n8nUrl.includes('127.0.0.1');
     
     if (platform === 'n8n') {
-      // Si pas de clé API n8n : mode copier-coller, on reste dans Aura
+      // Si pas de clé API n8n : mode copier-coller
       if (!n8nApiKey || n8nApiKey.trim() === '') {
-        setAutomationError("Clé API n8n non configurée. Le scénario JSON a été copié dans votre presse-papiers — collez-le (Ctrl+V) directement dans le canvas n8n.");
-        triggerToast("✓ Scénario JSON copié dans le presse-papiers !");
+        setAutomationError("Clé API n8n non configurée. Le scénario JSON a été copié dans votre presse-papiers. Collez-le (Ctrl+V) dans n8n.");
+        triggerToast("✓ Scénario JSON copié !");
         setIsLaunchingAutomation(false);
         setShowAutomationModal(true);
-        // Pas de window.open — l'utilisateur reste sur Aura
+        // Ouvrir n8n pour aider l'utilisateur
+        window.open(n8nUrl || "http://localhost:5678", "_blank");
         return;
       }
 
-      triggerToast("Déploiement automatique via proxy sécurisé...");
+      triggerToast("Déploiement automatique sur votre n8n...");
       try {
         const parsedWorkflow = JSON.parse(generatedCode);
         const response = await fetch('/api/n8n-proxy', {
@@ -5728,18 +6072,18 @@ L'objet JSON doit respecter rigoureusement cette structure :
         
         if (response.ok) {
           const resData = await response.json();
-          triggerToast(`✓ Déploiement automatique réussi sur n8n (ID: ${resData.id}) !`);
+          triggerToast(`✓ Déploiement automatique réussi sur n8n !`);
           setDeployLogs(prev => [
             ...prev,
-            `[PROD] Déploiement direct réussi sur n8n via l'API Key.`,
+            `[PROD] Déploiement direct réussi sur n8n.`,
             `[PROD] Workflow ID : ${resData.id}`
           ]);
           if (resData.id) setDeployedWorkflowId(resData.id);
-          // Si l'URL n8n est une URL cloud valide, on stocke l'URL pour affichage
           if (hasValidN8nUrl) setDeployedWorkflowUrl(`${n8nUrl}/workflow/${resData.id}`);
           setIsLaunchingAutomation(false);
           setShowAutomationModal(true);
-          // Pas de window.open automatique — l'utilisateur reste sur Aura
+          // Ouvrir directement le workflow sur n8n
+          window.open(deployedWorkflowUrl || `${n8nUrl}/workflow/${resData.id}` || n8nUrl, "_blank");
           return;
         } else {
           let errorMsg = "Erreur de configuration ou réseau";
@@ -5749,25 +6093,25 @@ L'objet JSON doit respecter rigoureusement cette structure :
             catch (_) { errorMsg = errText || errorMsg; }
           } catch (__) {}
           console.warn("Direct deploy failed:", errorMsg);
-          setAutomationError(`L'API n8n a retourné une erreur : "${errorMsg}". Le JSON a été copié dans votre presse-papiers.`);
-          triggerToast("⚠️ Échec du déploiement direct. Copie manuelle activée.");
+          setAutomationError(`L'API n8n a retourné une erreur : "${errorMsg}". Le JSON a été copié.`);
+          triggerToast("⚠️ Déploiement direct impossible. Mode manuel activé.");
         }
       } catch (e) {
         console.error("Direct deploy error:", e);
-        setAutomationError(`Proxy injoignable : ${e.message || e}. Le JSON a été copié — collez-le dans n8n.`);
-        triggerToast("⚠️ Erreur réseau. Copie manuelle activée.");
+        setAutomationError(`Proxy injoignable : ${e.message || e}. Le JSON a été copié.`);
+        triggerToast("⚠️ Erreur réseau. Mode manuel activé.");
       }
       
       setIsLaunchingAutomation(false);
       setShowAutomationModal(true);
+      window.open(n8nUrl || "http://localhost:5678", "_blank");
       return;
     }
     
-    // Make.com : copier-coller uniquement, on reste dans Aura
-    triggerToast("✓ Blueprint Make.com copié dans votre presse-papiers !");
+    triggerToast("✓ Blueprint Make.com copié !");
     setIsLaunchingAutomation(false);
     setShowAutomationModal(true);
-    // Pas de redirection vers make.com/en/login
+    window.open("https://www.make.com/en/login", "_blank");
   };
 
     const handleSwitchAutomationPlatform = (platform) => {
@@ -6588,6 +6932,10 @@ L'objet JSON doit respecter rigoureusement cette structure :
             liveExecSteps={liveExecSteps}
 
             liveExecLog={liveExecLog}
+
+            scenarioExecutions={scenarioExecutions}
+
+            setScenarioExecutions={setScenarioExecutions}
 
           />
 

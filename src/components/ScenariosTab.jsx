@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { 
   Sliders, 
   Sparkles, 
@@ -81,8 +81,11 @@ export default function ScenariosTab({
   showLiveExecPanel,
   setShowLiveExecPanel,
   liveExecSteps,
-  liveExecLog
+  liveExecLog,
+  scenarioExecutions,
+  setScenarioExecutions
 }) {
+  const [selectedHistoricalExec, setSelectedHistoricalExec] = useState(null);
   return (
     <>
     <div className="space-y-8 animate-fadeIn">
@@ -435,38 +438,33 @@ export default function ScenariosTab({
                   </button>
                 </div>
               </div>
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-2 items-center">
                 <button
                   onClick={runScenarioSimulation}
                   disabled={isSimulating || isDeploying || activeScenario.steps.length === 0}
-                  className="bg-indigo-650 hover:bg-indigo-650 disabled:bg-slate-900 disabled:text-slate-600 disabled:border-slate-850 border border-indigo-500/20 text-white py-2 px-3.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5"
+                  className="bg-indigo-650 hover:bg-indigo-600 disabled:bg-slate-900 disabled:text-slate-600 disabled:border-slate-850 border border-indigo-500/20 text-white py-2 px-3.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5"
+                  title="Simuler visuellement le flux d'étapes sur le dashboard"
                 >
                   <Zap className="w-4 h-4 text-yellow-300 animate-pulse" />
-                  <span>Simuler le flux</span>
-                </button>
-                <button
-                  onClick={startDeployment}
-                  disabled={isDeploying || isSimulating || activeScenario.steps.length === 0}
-                  className="bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-550 hover:to-indigo-550 disabled:from-slate-900 disabled:to-slate-900 disabled:text-slate-600 disabled:border-slate-850 border border-indigo-500/30 text-white py-2 px-3.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-lg shadow-indigo-650/10 hover:shadow-indigo-650/25"
-                >
-                  <Rocket className="w-4 h-4 text-indigo-200" />
-                  <span>Déployer & Activer</span>
+                  <span>Simuler visuellement</span>
                 </button>
                 <button
                   onClick={handleLaunchAutomationPipeline}
                   disabled={isLaunchingAutomation || activeScenario.steps.length === 0}
-                  className="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-555 hover:to-teal-555 disabled:from-slate-900 disabled:to-slate-900 disabled:text-slate-600 disabled:border-slate-850 border border-emerald-500/30 text-white py-2 px-3.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-lg shadow-emerald-950/20"
+                  className="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-550 hover:to-teal-550 disabled:from-slate-900 disabled:to-slate-900 disabled:text-slate-600 disabled:border-slate-850 border border-emerald-500/30 text-white py-2 px-3.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-lg shadow-emerald-950/20"
+                  title="Déployer et configurer ce scénario sur n8n ou Make"
                 >
                   <ExternalLink className="w-4 h-4 text-emerald-300" />
-                  <span>{isLaunchingAutomation ? "Lancement..." : "Lancer directement"}</span>
+                  <span>{isLaunchingAutomation ? "Lancement..." : "Lancer sur n8n (Production)"}</span>
                 </button>
                 <button
                   onClick={handleRunInAura}
                   disabled={activeScenario.steps.length === 0}
                   className="bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-550 hover:to-violet-550 disabled:from-slate-900 disabled:to-slate-900 disabled:text-slate-600 border border-indigo-500/30 text-white py-2 px-3.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-lg shadow-indigo-950/20"
+                  title="Exécuter et tester le scénario en direct sur Aura"
                 >
                   <Play className="w-4 h-4 text-indigo-200" />
-                  <span>Exécuter dans Aura</span>
+                  <span>Exécuter dans Aura (Test Live)</span>
                 </button>
                 <button
                   onClick={() => exportScenarioConfig(activeScenario)}
@@ -481,6 +479,20 @@ export default function ScenariosTab({
                   <Trash2 className="w-4 h-4" /> Supprimer
                 </button>
               </div>
+            </div>
+            
+            {/* Help guidelines about execution choices */}
+            <div className="px-6 pb-2 grid grid-cols-1 md:grid-cols-2 gap-4 text-[10px] text-slate-500 border-t border-slate-900/40 pt-3 mt-1">
+              <p className="flex items-start gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0 mt-1"></span>
+                <span><strong>Production n8n :</strong> Génère et active le workflow en direct sur votre serveur n8n pour fonctionner de manière autonome.</span>
+              </p>
+              <p className="flex items-start gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0 mt-1"></span>
+                <span><strong>Exécution Aura :</strong> Lance le scénario en direct avec vos vraies clés d'API (Claude, Gemini, etc.) et montre l'exécution pas à pas.</span>
+              </p>
+            </div>
+            <div className="hidden">
             </div>
 
             {/* Vertical steps timeline / Graphical Canvas */}
@@ -844,6 +856,72 @@ export default function ScenariosTab({
           </div>
         </div>
       </div>
+
+      {/* ── Section Historique des Exécutions ── */}
+      <div className="glass-card p-6 rounded-2xl border border-slate-800/80 space-y-4">
+        <div className="flex items-center justify-between">
+          <h4 className="text-sm font-bold text-white flex items-center gap-2">
+            <Terminal className="w-4 h-4 text-indigo-400" />
+            <span>Historique des exécutions (Temps Réel)</span>
+          </h4>
+          {(scenarioExecutions || []).length > 0 && (
+            <button
+              onClick={() => {
+                if (window.confirm("Voulez-vous vraiment vider tout l'historique des exécutions ?")) {
+                  setScenarioExecutions([]);
+                }
+              }}
+              className="text-[10px] text-rose-455 hover:underline font-semibold"
+            >
+              Vider l'historique
+            </button>
+          )}
+        </div>
+
+        {(!scenarioExecutions || scenarioExecutions.length === 0) ? (
+          <div className="p-8 bg-slate-900/10 border border-slate-850 rounded-xl text-center text-slate-500 text-xs">
+            <p>Aucune exécution enregistrée pour le moment.</p>
+            <p className="text-[10px] text-slate-600 mt-0.5">Utilisez le bouton "Exécuter dans Aura" ci-dessus pour lancer votre scénario en direct.</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {scenarioExecutions.map((exec) => (
+              <div
+                key={exec.id}
+                className="p-4 bg-slate-955 border border-slate-855 rounded-xl flex flex-col md:flex-row md:items-center justify-between gap-4 text-xs hover:border-slate-800 transition-all animate-fadeIn"
+              >
+                <div className="space-y-1.5 flex-1">
+                  <div className="flex items-center gap-2.5 flex-wrap">
+                    <span className="font-bold text-white">{exec.scenarioName}</span>
+                    <span className="text-[10px] text-slate-500">• {exec.date} à {exec.time}</span>
+                    <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${
+                      exec.status === 'success' ? 'bg-emerald-500/10 text-emerald-400' :
+                      exec.status === 'blocked' ? 'bg-amber-500/10 text-amber-400' :
+                      'bg-rose-500/10 text-rose-450'
+                    }`}>
+                      {exec.status === 'success' ? 'Success' : exec.status === 'blocked' ? 'Blocked' : 'Error'}
+                    </span>
+                  </div>
+                  {exec.output && (
+                    <p className="text-slate-400 italic text-[11px] line-clamp-1">
+                      Dernier retour : "{exec.output}"
+                    </p>
+                  )}
+                  <p className="text-[10px] text-slate-500 font-mono">
+                    {exec.steps.filter(s => s.status === 'done').length}/{exec.steps.length} etapes validees
+                  </p>
+                </div>
+                <button
+                  onClick={() => setSelectedHistoricalExec(exec)}
+                  className="bg-slate-900 hover:bg-slate-800 border border-slate-800 text-indigo-400 px-3.5 py-2 rounded-xl font-bold transition-all text-xs shrink-0 self-start md:self-center"
+                >
+                  Rapport complet
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
       {/* ── Live Execution Panel Modal ───────────────────────────────────────── */}
       {showLiveExecPanel && (
@@ -950,6 +1028,129 @@ export default function ScenariosTab({
                 </button>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Historical Execution Report Modal ── */}
+      {selectedHistoricalExec && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-950/80 backdrop-blur-md p-4 animate-fadeIn">
+          <div className="glass-card w-full max-w-2xl rounded-3xl border border-slate-800/80 shadow-2xl overflow-hidden animate-scaleIn flex flex-col max-h-[85vh]">
+            {/* Header */}
+            <div className="p-5 border-b border-slate-800/60 flex items-center justify-between bg-gradient-to-r from-slate-900 to-indigo-950/20">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-indigo-500/10 rounded-xl border border-indigo-500/20">
+                  <Terminal className="w-5 h-5 text-indigo-400" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-extrabold text-white uppercase tracking-wider">Rapport Historique : {selectedHistoricalExec.scenarioName}</h3>
+                  <p className="text-[10px] text-slate-400 font-mono mt-0.5">
+                    Lance le {selectedHistoricalExec.date} a {selectedHistoricalExec.time}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setSelectedHistoricalExec(null)}
+                className="p-1.5 hover:bg-slate-900 rounded-lg text-slate-400 hover:text-white transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Steps pipeline */}
+            <div className="flex-1 overflow-y-auto p-5 space-y-3 scrollbar-thin">
+              {selectedHistoricalExec.steps.map((step, idx) => (
+                <div
+                  key={step.id || idx}
+                  className={`flex items-start gap-3 p-3.5 rounded-2xl border transition-all ${
+                    step.status === 'done'
+                      ? 'bg-emerald-500/5 border-emerald-500/20'
+                      : step.status === 'missing'
+                      ? 'bg-amber-500/5 border-amber-500/20'
+                      : step.status === 'error'
+                      ? 'bg-rose-500/5 border-rose-500/20'
+                      : 'bg-slate-955 border-slate-900'
+                  }`}
+                >
+                  {/* Status icon */}
+                  <div className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 mt-0.5 ${
+                    step.status === 'done'
+                      ? 'bg-emerald-500/20 text-emerald-400'
+                      : step.status === 'missing'
+                      ? 'bg-amber-500/20 text-amber-400'
+                      : step.status === 'error'
+                      ? 'bg-rose-500/20 text-rose-455'
+                      : 'bg-slate-900 text-slate-600'
+                  }`}>
+                    {step.status === 'done' ? (
+                      <Check className="w-3.5 h-3.5" />
+                    ) : step.status === 'missing' ? (
+                      <span className="text-[11px] font-bold">!</span>
+                    ) : step.status === 'error' ? (
+                      <span className="text-[11px] font-bold">x</span>
+                    ) : (
+                      <span className="text-[10px] font-bold">{idx + 1}</span>
+                    )}
+                  </div>
+
+                  {/* Content */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs font-bold text-white">{step.tool}</span>
+                      <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider ${
+                        step.status === 'done' ? 'bg-emerald-500/15 text-emerald-400' :
+                        step.status === 'missing' ? 'bg-amber-500/15 text-amber-400' :
+                        step.status === 'error' ? 'bg-rose-500/15 text-rose-400' :
+                        'bg-slate-900 text-slate-500'
+                      }`}>
+                        {step.status === 'done' ? 'Termine' : step.status === 'missing' ? 'Bloque' : step.status === 'error' ? 'Erreur' : 'En attente'}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-400 mt-0.5 leading-relaxed">{step.action}</p>
+                    
+                    {step.result && (
+                      <div className="mt-2 p-2 bg-slate-900/60 rounded-xl border border-slate-850">
+                        <span className="text-[8px] font-bold text-slate-500 uppercase tracking-widest block mb-0.5">Resultat obtenu</span>
+                        <p className="text-[11px] text-emerald-300 leading-relaxed font-medium">
+                          {step.result}
+                        </p>
+                      </div>
+                    )}
+
+                    {step.errorMsg && (
+                      <p className="text-[11px] text-rose-400 mt-1 leading-relaxed font-medium">
+                        {step.errorMsg}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Console Log */}
+            <div className="border-t border-slate-800/60 p-4 bg-black/30">
+              <div className="flex items-center gap-2 mb-2">
+                <Terminal className="w-3 h-3 text-slate-500" />
+                <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Logs de la session</span>
+              </div>
+              <div className="max-h-28 overflow-y-auto scrollbar-thin space-y-0.5">
+                {(selectedHistoricalExec.logs || []).map((log, i) => (
+                  <p key={i} className="text-[10px] font-mono text-slate-400 leading-relaxed">
+                    {log}
+                  </p>
+                ))}
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="p-4 border-t border-slate-800/60 flex justify-end">
+              <button
+                onClick={() => setSelectedHistoricalExec(null)}
+                className="px-5 py-2 bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 text-xs font-bold rounded-xl transition-all"
+              >
+                Fermer le rapport
+              </button>
+            </div>
           </div>
         </div>
       )}
