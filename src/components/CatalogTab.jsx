@@ -2,7 +2,8 @@ import React, { useMemo, useState } from 'react';
 import { 
   Search, Sparkles, AlertTriangle, ArrowRight, Check, X, 
   Terminal, ExternalLink, Copy, Zap, Cpu, Building, Mic, 
-  Video, Mail, FileText, Database, Layers, Settings, ShieldCheck 
+  Video, Mail, FileText, Database, Layers, Settings, ShieldCheck,
+  Code
 } from 'lucide-react';
 import { AI_TOOLS_DATABASE } from '../constants';
 
