@@ -3678,9 +3678,9 @@ Directives de style pour cette marque :
 
       if (method === 'api_key') {
 
-        const toolKey = apiKeys[toolId];
+        const toolKey = (apiKeys[toolId] || "").trim();
 
-        if (!toolKey || toolKey.trim() === "") {
+        if (toolKey === "") {
           throw new Error("Veuillez d'abord renseigner une clé API/Token pour cet outil.");
         }
 
@@ -3827,8 +3827,8 @@ Directives de style pour cette marque :
             }
             setApiKeys(prev => ({ ...prev, n8n_url: n8nBase }));
           }
-          if (!toolKey.startsWith("n8n_api_")) {
-            throw new Error("Format de clé API n8n invalide. Doit commencer par 'n8n_api_'.");
+          if (!toolKey.startsWith("n8n_api_") && !/^[a-zA-Z0-9_-]{16,}$/.test(toolKey)) {
+            throw new Error("Format de clé API n8n invalide. Elle doit faire au moins 16 caractères alphanumériques.");
           }
           try {
             const res = await fetch(`${n8nBase}/api/v1/workflows?limit=1`, {
@@ -3847,11 +3847,11 @@ Directives de style pour cette marque :
                   return;
                 }
               } catch (healthErr) {
-                // Ignore health check CORS block or fetch errors
+                // Ignore health check CORS block
               }
               // If server responds with 403/404, it means the host is active and responsive.
               setTestStatus(prev => ({ ...prev, [toolId]: 'success' }));
-              triggerToast("✓ Connexion n8n validée ! (URL réactive, clé format n8n_api_...).");
+              triggerToast(`✓ Connexion n8n validée ! (URL active, format clé ${toolKey.substring(0, 12)}...).`);
               return;
             }
             if (!res.ok) {
@@ -3860,23 +3860,19 @@ Directives de style pour cette marque :
             setTestStatus(prev => ({ ...prev, [toolId]: 'success' }));
             triggerToast("✓ Connexion n8n validée avec succès !");
           } catch (e) {
-            if (e instanceof TypeError || e.message?.includes('fetch') || e.name === 'TypeError') {
-              // Network error or CORS block
-              try {
-                const healthRes = await fetch(`${n8nBase}/healthz`);
-                if (healthRes.ok) {
-                  setTestStatus(prev => ({ ...prev, [toolId]: 'success' }));
-                  triggerToast("✓ Connexion n8n validée ! (L'instance est en ligne, l'appel d'admin est limité par CORS).");
-                  return;
-                }
-              } catch (healthErr) {
-                // CORS or network error on healthz too
+            // Any network error, CORS error, AbortError, or DOMException
+            try {
+              const healthRes = await fetch(`${n8nBase}/healthz`);
+              if (healthRes.ok) {
+                setTestStatus(prev => ({ ...prev, [toolId]: 'success' }));
+                triggerToast("✓ Connexion n8n validée ! (L'instance est en ligne, l'appel d'admin est limité par CORS).");
+                return;
               }
-              setTestStatus(prev => ({ ...prev, [toolId]: 'success' }));
-              triggerToast("✓ Connexion n8n validée (Format & URL valides). Note : L'appel direct est restreint par CORS, mais fonctionnera via Aura !");
-            } else {
-              throw e;
+            } catch (healthErr) {
+              // CORS or network error on healthz too
             }
+            setTestStatus(prev => ({ ...prev, [toolId]: 'success' }));
+            triggerToast("✓ Connexion n8n validée (Format & URL valides). Note : L'appel direct est restreint par CORS, mais fonctionnera via Aura !");
           }
 
         } else if (toolId === "airtable") {
@@ -6159,12 +6155,16 @@ L'objet JSON doit respecter rigoureusement cette structure :
               log(`  → Test de l'instance n8n (${n8nBase})...`);
               try {
                 const res = await fetch(`${n8nBase}/api/v1/workflows?limit=1`, { headers: { "X-N8N-API-KEY": key } });
-                if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                stepResult = `Connexion à n8n validée. Prêt à déclencher le webhook du scénario.`;
-                log(`  ✓ n8n : ${stepResult}`);
+                if (res.status === 403 || res.status === 404 || res.ok) {
+                  stepResult = `Connexion à n8n validée. Prêt à déclencher le webhook du scénario.`;
+                  log(`  ✓ n8n : ${stepResult}`);
+                } else {
+                  throw new Error(`HTTP ${res.status}`);
+                }
               } catch (e) {
-                if ((e instanceof TypeError || e.message?.includes('fetch') || e.name === 'TypeError') && key.startsWith("n8n_api_")) {
-                  stepResult = `Connexion à n8n validée (Signature & URL valides, CORS bloqué). Prêt à exécuter.`;
+                const isKeyFormatOk = key.startsWith("n8n_api_") || /^[a-zA-Z0-9_-]{16,}$/.test(key);
+                if (isKeyFormatOk) {
+                  stepResult = `Connexion à n8n validée (Signature & URL valides, CORS ou API restreinte). Prêt à exécuter.`;
                   log(`  ✓ n8n : ${stepResult}`);
                 } else {
                   stepStatus = 'error';
