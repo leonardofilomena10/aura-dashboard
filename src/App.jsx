@@ -5569,17 +5569,17 @@ L'objet JSON doit respecter rigoureusement cette structure :
     copyToClipboard(generatedCode);
     
     const n8nApiKey = apiKeys["n8n"];
-    const n8nUrl = (apiKeys["n8n_url"] || "http://localhost:5678").replace(/\/$/, "");
+    const n8nUrl = (apiKeys["n8n_url"] || "").replace(/\/$/, "");
+    const hasValidN8nUrl = n8nUrl && !n8nUrl.includes('localhost') && !n8nUrl.includes('127.0.0.1');
     
     if (platform === 'n8n') {
+      // Si pas de clé API n8n : mode copier-coller, on reste dans Aura
       if (!n8nApiKey || n8nApiKey.trim() === '') {
-        setAutomationError("Clé API n8n non configurée dans vos paramètres. L'importation manuelle (copier-coller) a été activée.");
-        triggerToast("✓ Scénario copié ! Configurez une clé API n8n pour l'intégration automatique.");
+        setAutomationError("Clé API n8n non configurée. Le scénario JSON a été copié dans votre presse-papiers — collez-le (Ctrl+V) directement dans le canvas n8n.");
+        triggerToast("✓ Scénario JSON copié dans le presse-papiers !");
         setIsLaunchingAutomation(false);
         setShowAutomationModal(true);
-        
-        const targetUrl = `${n8nUrl}/`;
-        window.open(targetUrl, '_blank');
+        // Pas de window.open — l'utilisateur reste sur Aura
         return;
       }
 
@@ -5588,9 +5588,7 @@ L'objet JSON doit respecter rigoureusement cette structure :
         const parsedWorkflow = JSON.parse(generatedCode);
         const response = await fetch('/api/n8n-proxy', {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             n8nUrl: n8nUrl,
             apiKey: n8nApiKey,
@@ -5609,31 +5607,30 @@ L'objet JSON doit respecter rigoureusement cette structure :
           setDeployLogs(prev => [
             ...prev,
             `[PROD] Déploiement direct réussi sur n8n via l'API Key.`,
-            `[PROD] URL du workflow : ${n8nUrl}/workflow/${resData.id}`
+            `[PROD] Workflow ID : ${resData.id}`
           ]);
+          if (resData.id) setDeployedWorkflowId(resData.id);
+          // Si l'URL n8n est une URL cloud valide, on stocke l'URL pour affichage
+          if (hasValidN8nUrl) setDeployedWorkflowUrl(`${n8nUrl}/workflow/${resData.id}`);
           setIsLaunchingAutomation(false);
           setShowAutomationModal(true);
-          window.open(`${n8nUrl}/workflow/${resData.id}`, '_blank');
+          // Pas de window.open automatique — l'utilisateur reste sur Aura
           return;
         } else {
           let errorMsg = "Erreur de configuration ou réseau";
           try {
             const errText = await response.text();
-            try {
-              const errJson = JSON.parse(errText);
-              errorMsg = errJson.message || errJson.error || errorMsg;
-            } catch (_) {
-              errorMsg = errText || errorMsg;
-            }
+            try { const errJson = JSON.parse(errText); errorMsg = errJson.message || errJson.error || errorMsg; } 
+            catch (_) { errorMsg = errText || errorMsg; }
           } catch (__) {}
           console.warn("Direct deploy failed:", errorMsg);
-          setAutomationError(`L'API n8n a retourné une erreur : "${errorMsg}".`);
-          triggerToast("Échec du déploiement direct. Copie manuelle activée.");
+          setAutomationError(`L'API n8n a retourné une erreur : "${errorMsg}". Le JSON a été copié dans votre presse-papiers.`);
+          triggerToast("⚠️ Échec du déploiement direct. Copie manuelle activée.");
         }
       } catch (e) {
         console.error("Direct deploy error:", e);
-        setAutomationError(`Impossible de contacter le proxy de déploiement : ${e.message || e}`);
-        triggerToast("Erreur de liaison API n8n. Copie manuelle activée.");
+        setAutomationError(`Proxy injoignable : ${e.message || e}. Le JSON a été copié — collez-le dans n8n.`);
+        triggerToast("⚠️ Erreur réseau. Copie manuelle activée.");
       }
       
       setIsLaunchingAutomation(false);
@@ -5641,12 +5638,11 @@ L'objet JSON doit respecter rigoureusement cette structure :
       return;
     }
     
-    triggerToast("✓ Scénario copié dans votre presse-papiers !");
+    // Make.com : copier-coller uniquement, on reste dans Aura
+    triggerToast("✓ Blueprint Make.com copié dans votre presse-papiers !");
     setIsLaunchingAutomation(false);
     setShowAutomationModal(true);
-    
-    const targetUrl = platform === 'make' ? 'https://www.make.com/en/login' : `${n8nUrl}/`;
-    window.open(targetUrl, '_blank');
+    // Pas de redirection vers make.com/en/login
   };
 
     const handleSwitchAutomationPlatform = (platform) => {
@@ -6960,16 +6956,16 @@ L'objet JSON doit respecter rigoureusement cette structure :
                 </div>
 
                 <div className="flex flex-col sm:flex-row justify-end gap-3 border-t border-slate-900/60 pt-4 w-full">
-                  <button
-                    onClick={() => {
-                      const configuredN8nUrl = (apiKeys["n8n_url"] || "http://localhost:5678").replace(/\/$/, "");
-                      window.open(deployedWorkflowUrl || `${configuredN8nUrl}/workflow/${deployedWorkflowId}`, '_blank');
-                    }}
-                    className="px-5 py-2.5 bg-slate-950 border border-slate-850 hover:bg-slate-900 text-slate-400 hover:text-white font-bold text-xs rounded-xl transition-all flex items-center justify-center gap-1.5"
-                  >
-                    <ExternalLink className="w-3.5 h-3.5" />
-                    <span>Accéder à n8n (Avancé)</span>
-                  </button>
+                  {/* Affiche le lien n8n uniquement si c'est une URL cloud valide (pas localhost) */}
+                  {deployedWorkflowUrl && !deployedWorkflowUrl.includes('localhost') && !deployedWorkflowUrl.includes('127.0.0.1') && (
+                    <button
+                      onClick={() => window.open(deployedWorkflowUrl, '_blank')}
+                      className="px-5 py-2.5 bg-slate-950 border border-slate-850 hover:bg-slate-900 text-slate-400 hover:text-white font-bold text-xs rounded-xl transition-all flex items-center justify-center gap-1.5"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                      <span>Voir sur n8n Cloud</span>
+                    </button>
+                  )}
                   <button
                     onClick={() => setShowAutomationModal(false)}
                     className={`px-6 py-2.5 text-white font-bold text-xs rounded-xl bg-gradient-to-r ${theme.bgGradient} ${theme.shadow} transition-all flex items-center justify-center gap-1.5`}
@@ -7066,21 +7062,21 @@ L'objet JSON doit respecter rigoureusement cette structure :
                 {/* Modal actions */}
                 <div className="flex justify-end gap-3 border-t border-slate-900/60 pt-4">
                   <button
-                    onClick={() => setShowAutomationModal(false)}
-                    className="px-5 py-2.5 bg-slate-950 border border-slate-850 hover:bg-slate-900 text-slate-300 font-bold text-xs rounded-xl transition-all"
+                    onClick={() => {
+                      copyToClipboard(automationJSON);
+                      triggerToast("✓ JSON copié à nouveau dans le presse-papiers !");
+                    }}
+                    className="px-5 py-2.5 bg-slate-950 border border-slate-850 hover:bg-slate-900 text-slate-300 font-bold text-xs rounded-xl transition-all flex items-center gap-1.5"
                   >
-                    Fermer & Rester sur Aura
+                    <Copy className="w-3.5 h-3.5" />
+                    Copier le JSON
                   </button>
                   <button
-                    onClick={() => {
-                      const configuredN8nUrl = (apiKeys["n8n_url"] || "http://localhost:5678").replace(/\/$/, "");
-                      const targetUrl = automationPlatform === 'make' ? 'https://www.make.com/en/login' : `${configuredN8nUrl}/`;
-                      window.open(targetUrl, '_blank');
-                    }}
+                    onClick={() => setShowAutomationModal(false)}
                     className={`px-6 py-2.5 text-white font-bold text-xs rounded-xl bg-gradient-to-r ${theme.bgGradient} ${theme.shadow} transition-all flex items-center gap-1.5`}
                   >
-                    <ExternalLink className="w-4 h-4" />
-                    <span>Ouvrir {automationPlatform === 'n8n' ? 'n8n' : 'Make.com'}</span>
+                    <Check className="w-4 h-4" />
+                    <span>Rester sur Aura</span>
                   </button>
                 </div>
               </>
