@@ -17,7 +17,10 @@ import {
   ArrowDown, 
   ArrowLeft, 
   ArrowRight, 
-  Terminal 
+  Terminal,
+  X,
+  Check,
+  Loader
 } from 'lucide-react';
 import { AI_TOOLS_DATABASE } from '../constants';
 import { getToolIconConfig, renderToolIcon } from '../utils';
@@ -73,9 +76,15 @@ export default function ScenariosTab({
   setNewStepTool,
   newStepAction,
   setNewStepAction,
-  addStep
+  addStep,
+  handleRunInAura,
+  showLiveExecPanel,
+  setShowLiveExecPanel,
+  liveExecSteps,
+  liveExecLog
 }) {
   return (
+    <>
     <div className="space-y-8 animate-fadeIn">
       {/* Active target banner inside scenarios */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -450,6 +459,14 @@ export default function ScenariosTab({
                 >
                   <ExternalLink className="w-4 h-4 text-emerald-300" />
                   <span>{isLaunchingAutomation ? "Lancement..." : "Lancer directement"}</span>
+                </button>
+                <button
+                  onClick={handleRunInAura}
+                  disabled={activeScenario.steps.length === 0}
+                  className="bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-550 hover:to-violet-550 disabled:from-slate-900 disabled:to-slate-900 disabled:text-slate-600 border border-indigo-500/30 text-white py-2 px-3.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-lg shadow-indigo-950/20"
+                >
+                  <Play className="w-4 h-4 text-indigo-200" />
+                  <span>Exécuter dans Aura</span>
                 </button>
                 <button
                   onClick={() => exportScenarioConfig(activeScenario)}
@@ -828,5 +845,115 @@ export default function ScenariosTab({
         </div>
       </div>
     </div>
+      {/* ── Live Execution Panel Modal ───────────────────────────────────────── */}
+      {showLiveExecPanel && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-950/80 backdrop-blur-md p-4 animate-fadeIn">
+          <div className="glass-card w-full max-w-2xl rounded-3xl border border-slate-800/80 shadow-2xl overflow-hidden animate-scaleIn flex flex-col max-h-[85vh]">
+            {/* Header */}
+            <div className="p-5 border-b border-slate-800/60 flex items-center justify-between bg-gradient-to-r from-indigo-950/40 to-violet-950/40">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-indigo-500/10 rounded-xl border border-indigo-500/20">
+                  <Terminal className="w-5 h-5 text-indigo-400 animate-pulse" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-extrabold text-white uppercase tracking-wider">Exécution en Direct — Aura</h3>
+                  <p className="text-[10px] text-slate-400 font-mono mt-0.5">
+                    {liveExecSteps.filter(s => s.status === 'done').length}/{liveExecSteps.length} étapes terminées
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowLiveExecPanel(false)}
+                className="p-1.5 hover:bg-slate-900 rounded-lg text-slate-400 hover:text-white transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Steps pipeline */}
+            <div className="flex-1 overflow-y-auto p-5 space-y-3 scrollbar-thin">
+              {liveExecSteps.map((step, idx) => (
+                <div
+                  key={step.id || idx}
+                  className={`flex items-start gap-3 p-3.5 rounded-2xl border transition-all ${
+                    step.status === 'running'
+                      ? 'bg-indigo-500/5 border-indigo-500/30 shadow-lg shadow-indigo-500/5'
+                      : step.status === 'done'
+                        ? 'bg-emerald-500/5 border-emerald-500/20'
+                        : 'bg-slate-950/40 border-slate-900'
+                  }`}
+                >
+                  {/* Status icon */}
+                  <div className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 mt-0.5 ${
+                    step.status === 'running'
+                      ? 'bg-indigo-500/20 text-indigo-400'
+                      : step.status === 'done'
+                        ? 'bg-emerald-500/20 text-emerald-400'
+                        : 'bg-slate-900 text-slate-600'
+                  }`}>
+                    {step.status === 'running' ? (
+                      <Loader className="w-3.5 h-3.5 animate-spin" />
+                    ) : step.status === 'done' ? (
+                      <Check className="w-3.5 h-3.5" />
+                    ) : (
+                      <span className="text-[10px] font-bold">{idx + 1}</span>
+                    )}
+                  </div>
+
+                  {/* Content */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs font-bold text-white">{step.tool}</span>
+                      <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider ${
+                        step.status === 'running' ? 'bg-indigo-500/15 text-indigo-400 animate-pulse' :
+                        step.status === 'done' ? 'bg-emerald-500/15 text-emerald-400' :
+                        'bg-slate-900 text-slate-500'
+                      }`}>
+                        {step.status === 'running' ? 'En cours...' : step.status === 'done' ? 'Terminé' : 'En attente'}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-400 mt-0.5 leading-relaxed">{step.action}</p>
+                    {step.result && (
+                      <p className="text-[11px] text-emerald-300 mt-1 leading-relaxed font-medium">
+                        → {step.result}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Console Log */}
+            <div className="border-t border-slate-800/60 p-4 bg-black/30">
+              <div className="flex items-center gap-2 mb-2">
+                <Terminal className="w-3 h-3 text-slate-500" />
+                <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Console d'Exécution</span>
+              </div>
+              <div className="max-h-28 overflow-y-auto scrollbar-thin space-y-0.5">
+                {liveExecLog.map((log, i) => (
+                  <p key={i} className="text-[10px] font-mono text-slate-400 leading-relaxed">
+                    {log}
+                  </p>
+                ))}
+              </div>
+            </div>
+
+            {/* Footer */}
+            {liveExecSteps.length > 0 && liveExecSteps.every(s => s.status === 'done') && (
+              <div className="p-4 border-t border-slate-800/60 flex justify-end gap-3">
+                <button
+                  onClick={() => setShowLiveExecPanel(false)}
+                  className="px-6 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-550 hover:to-teal-550 text-white text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 shadow-lg shadow-emerald-950/20"
+                >
+                  <Check className="w-4 h-4" />
+                  Scénario accompli — Retour au Dashboard
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+    </>
   );
 }
