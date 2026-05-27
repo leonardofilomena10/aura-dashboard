@@ -14,7 +14,9 @@ import {
   Copy,
   Terminal,
   Plus,
-  Trash2
+  Trash2,
+  Building,
+  Sparkles
 } from 'lucide-react';
 import { getToolIconConfig, renderToolIcon } from '../utils';
 
@@ -82,9 +84,48 @@ export default function LiveActionTab({
   triggerToast,
   runScenarioSimulation,
   selectedGeminiModel,
-  setSelectedGeminiModel
+  setSelectedGeminiModel,
+  gmbProfiles,
+  activeProfileId,
+  setGmbProfiles,
+  setActiveProfileId
 }) {
   const [cliInput, setCliInput] = useState('');
+
+  const handleTargetCompany = () => {
+    if (!gmbLocation.trim()) {
+      triggerToast("Veuillez entrer un nom d'établissement.");
+      return;
+    }
+    
+    // Check if profile exists
+    const existing = gmbProfiles.find(p => p.location.toLowerCase() === gmbLocation.trim().toLowerCase());
+    if (existing) {
+      setActiveProfileId(existing.id);
+      triggerToast(`Établissement "${existing.location}" ciblé avec succès !`);
+    } else {
+      // Create a new mock profile for this location
+      const newProf = {
+        id: `prof-${Date.now()}`,
+        email: 'contact@etablissement.fr',
+        location: gmbLocation.trim(),
+        category: 'Services',
+        address: 'Adresse de test, 75000 Paris',
+        phone: '01 00 00 00 00',
+        website: 'https://etablissement.fr',
+        siret: '12345678901234',
+        autoReply: true,
+        rating: 4.8,
+        totalReviews: 5,
+        pendingReviews: 0,
+        status: 'active',
+        connectionStatus: 'disconnected'
+      };
+      setGmbProfiles([newProf]);
+      setActiveProfileId(newProf.id);
+      triggerToast(`Établissement "${newProf.location}" créé et ciblé avec succès !`);
+    }
+  };
 
   const handleCliSubmit = async (cmd) => {
     if (!cmd.trim()) return;
@@ -237,13 +278,48 @@ export default function LiveActionTab({
               <div className="space-y-4 text-sm animate-fadeIn">
                 <div>
                   <label className="block text-xs font-bold uppercase text-slate-400 mb-1.5">Établissement ciblé</label>
-                  <input
-                    type="text"
-                    value={gmbLocation}
-                    onChange={(e) => setGmbLocation(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-800 rounded-xl px-4 py-2.5 text-slate-200 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500/50"
-                  />
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={gmbLocation}
+                      onChange={(e) => setGmbLocation(e.target.value)}
+                      placeholder="Ex: Boulangerie Gourmande, Paris 11"
+                      className="flex-1 bg-slate-900 border border-slate-800 rounded-xl px-3.5 py-2 text-slate-200 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500/50"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleTargetCompany}
+                      className="bg-indigo-650 hover:bg-indigo-600 border border-indigo-550/40 text-white font-bold px-4 py-2 rounded-xl text-xs transition-all focus:outline-none"
+                    >
+                      Cibler
+                    </button>
+                  </div>
                 </div>
+
+                {(() => {
+                  const activeProf = gmbProfiles?.find(p => p.id === activeProfileId) || gmbProfiles?.[0];
+                  if (!activeProf || !gmbLocation || activeProf.location.toLowerCase() !== gmbLocation.trim().toLowerCase()) return null;
+                  return (
+                    <div className="glass-card p-4 rounded-xl border border-indigo-500/30 bg-indigo-950/10 relative overflow-hidden animate-slideDown">
+                      <div className="flex items-center gap-3">
+                        <div className="p-2 bg-indigo-500/10 text-indigo-400 rounded-lg">
+                          <Building className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[9px] font-bold text-indigo-400 uppercase tracking-wider">Cible active</span>
+                            <span className="text-[9px] bg-emerald-500/10 text-emerald-400 px-1.5 py-0.5 rounded font-extrabold uppercase">
+                              {activeProf.status === 'active' ? 'Connecté' : 'Mode Sandbox'}
+                            </span>
+                          </div>
+                          <h4 className="text-sm font-bold text-white mt-0.5">{activeProf.location}</h4>
+                          <p className="text-[10px] text-slate-400">{activeProf.address} • <span className="text-indigo-400">{activeProf.category}</span></p>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+
                 <div>
                   <label className="block text-xs font-bold uppercase text-slate-400 mb-1.5">Avis client à traiter</label>
                   <textarea

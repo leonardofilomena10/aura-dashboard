@@ -6614,82 +6614,7 @@ L'objet JSON doit respecter rigoureusement cette structure :
 
         
 
-        {/* Global Active Target Company Card */}
 
-        {(() => {
-
-          const isGoogleContext = activeTab === 'profiles' || (activeTab === 'live-action' && actionMode === 'gmb');
-          if (!isGoogleContext) return null;
-
-          const activeProf = gmbProfiles.find(p => p.id === activeProfileId) || gmbProfiles[0];
-
-          if (!activeProf) return null;
-
-          return (
-
-            <div className="glass-card p-5 rounded-2xl border border-slate-800/80 mb-6 flex flex-col md:flex-row items-center justify-between gap-4 bg-slate-900/40 relative overflow-hidden">
-
-              <div className="flex items-center gap-4">
-
-                <div className={`p-3 bg-gradient-to-tr ${theme.bgGradient} text-white rounded-xl shadow-lg ${theme.glow}`}>
-
-                  <Building className="w-5 h-5 animate-pulse" />
-
-                </div>
-
-                <div>
-
-                  <div className="flex items-center gap-2">
-
-                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Établissement Cible Actif</span>
-
-                    <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase ${
-
-                      activeProf.status === 'active' 
-
-                        ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' 
-
-                        : 'bg-amber-500/10 text-amber-450 border border-amber-500/20'
-
-                    }`}>
-
-                      {activeProf.status === 'active' ? 'Connecté' : 'Mode Sandbox'}
-
-                    </span>
-
-                  </div>
-
-                  <h3 className="text-lg font-extrabold text-white tracking-wide mt-0.5">{activeProf.location}</h3>
-
-                  <p className="text-xs text-slate-400 font-medium">{activeProf.address} • <span className={theme.text}>{activeProf.category}</span></p>
-
-                </div>
-
-              </div>
-
-              <div className="flex items-center gap-3">
-
-                <button
-
-                  onClick={() => setActiveTab('profiles')}
-
-                  className="bg-slate-955 hover:bg-slate-900 border border-slate-850 hover:border-slate-800 text-indigo-400 font-bold px-4 py-2 rounded-xl text-xs transition-all flex items-center gap-1.5"
-
-                >
-
-                  <Sliders className="w-3.5 h-3.5" />
-
-                  <span>Cibler une autre société</span>
-
-                </button>
-
-              </div>
-
-            </div>
-
-          );
-
-        })()}
 
         
 
@@ -6722,6 +6647,10 @@ L'objet JSON doit respecter rigoureusement cette structure :
             getCategoryDetails={getCategoryDetails}
 
             copyToClipboard={copyToClipboard}
+
+            setActiveTab={setActiveTab}
+
+            setActionMode={setActionMode}
 
           />
 
@@ -6904,6 +6833,14 @@ L'objet JSON doit respecter rigoureusement cette structure :
             selectedGeminiModel={selectedGeminiModel}
 
             setSelectedGeminiModel={setSelectedGeminiModel}
+
+            gmbProfiles={gmbProfiles}
+
+            activeProfileId={activeProfileId}
+
+            setGmbProfiles={setGmbProfiles}
+
+            setActiveProfileId={setActiveProfileId}
 
           />
 
