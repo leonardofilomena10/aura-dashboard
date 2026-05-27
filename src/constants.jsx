@@ -1135,6 +1135,19 @@ export const AI_TOOLS_DATABASE = [
     bestCombo: "Hébergez-le sur votre propre serveur VPS pour faire tourner des millions de tâches."
   },
   {
+    id: "stripe",
+    name: "Stripe",
+    category: "automation",
+    rating: 4.9,
+    freeTier: "Sans abonnement fixe",
+    price: "Frais par transaction (2.9% + 0.30$)",
+    link: "https://dashboard.stripe.com/apikeys",
+    linkLabel: "Obtenir une clé Stripe API",
+    shortDesc: "La plateforme de paiement et facturation de référence pour vos SaaS et e-commerce.",
+    utility: "Créer des liens de paiement, gérer des abonnements récurrents et suivre vos revenus.",
+    bestCombo: "À connecter avec un bot Slack/n8n pour notifier en direct votre équipe de chaque vente."
+  },
+  {
     id: "activepieces",
     name: "Activepieces",
     category: "automation",

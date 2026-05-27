@@ -17,10 +17,14 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'Missing required fields: n8nUrl, apiKey, workflow' });
   }
 
-  // Prepend https:// if protocol is missing
+  // Prepend protocol if missing (http:// for local, https:// otherwise)
   let cleanUrl = n8nUrl.trim().replace(/\/$/, '');
   if (!/^https?:\/\//i.test(cleanUrl)) {
-    cleanUrl = `https://${cleanUrl}`;
+    if (cleanUrl.startsWith("localhost") || cleanUrl.startsWith("127.0.0.1") || cleanUrl.includes("192.168.") || cleanUrl.includes("10.")) {
+      cleanUrl = `http://${cleanUrl}`;
+    } else {
+      cleanUrl = `https://${cleanUrl}`;
+    }
   }
 
   console.log(`[n8n-proxy] Forwarding workflow creation to: ${cleanUrl}/api/v1/workflows`);
