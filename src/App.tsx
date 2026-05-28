@@ -98,13 +98,24 @@ import {
 
   Star,
 
-  MessageSquareOff
+  MessageSquareOff,
+
+  CreditCard,
+
+  Bot
 
 } from 'lucide-react';
 
+import { callGeminiAPI as callGeminiServiceAPI, getMockAiResponse } from './services/geminiService';
+import { executeRealElevenLabsTTS as executeRealElevenLabsTTSService } from './services/elevenLabsService';
+import { fetchGmailRecentMails } from './services/gmailService';
+import { fetchRealGoogleMyBusinessReviews, replyToRealGoogleMyBusinessReview } from './services/gmbService';
+import { testN8nConnection } from './services/n8nService';
+import { testConnectionService } from './services/connectionTestService';
+
 import { INITIAL_SCENARIOS, AI_TOOLS_DATABASE } from './constants';
 
-import { getToolIdByName, getToolIconConfig, renderToolIcon, getMockAiResponse } from './utils';
+import { getToolIdByName, getToolIconConfig, renderToolIcon } from './utils';
 
 // Import components
 
@@ -126,6 +137,13 @@ import SettingsTab from './components/SettingsTab';
 
 import GiftTab from './components/GiftTab';
 
+// Import Zustand stores
+import useUIStore from './stores/useUIStore';
+import useApiKeysStore from './stores/useApiKeysStore';
+import useGmbStore from './stores/useGmbStore';
+import useScenariosStore from './stores/useScenariosStore';
+import useClientsStore from './stores/useClientsStore';
+
 // ==========================================
 
 // SCÉNARIOS DE DÉPART DE L'APPLICATION
@@ -140,19 +158,198 @@ import GiftTab from './components/GiftTab';
 
 // Helper functions removed
 
+import { useDeployPipeline } from './hooks/useDeployPipeline';
+import { useAntigravityCommands, startSpeechRecognition, parseStepVoiceDescription } from './hooks/useAntigravityCommands';
+
+import { useScenarioSimulator } from './hooks/useScenarioSimulator';
+import { useGmbScanner } from './hooks/useGmbScanner';
 export default function App() {
 
-  // Navigation & UI States
+  // ──────────────────────────────────────────────────────────────
+  // ZUSTAND STORES — Source of truth for persisted & shared state
+  // ──────────────────────────────────────────────────────────────
 
-  const [activeTab, setActiveTab] = useState('catalog');
+  // UI Store
+  const {
+    activeTab, setActiveTab,
+    primaryBrandTheme, setPrimaryBrandTheme,
+    agencyName, setAgencyName,
+    selectedGeminiModel, setSelectedGeminiModel,
+    searchTerm, setSearchTerm,
+    selectedCategory, setSelectedCategory,
+    selectedTool, setSelectedTool,
+    triggerToast,
+    showScrollTop, setShowScrollTop,
+  } = useUIStore();
 
-  const [selectedGeminiModel, setSelectedGeminiModel] = useState('gemini-2.5-flash-preview-09-2025');
+  // API Keys Store
+  const {
+    apiKeys, setKey: setApiKeyField, setKeys: mergeApiKeys,
+    keyConfigMethod, setKeyMethod: handleUpdateKeyMethod,
+    testStatus, setTestStatus: setTestStatusField,
+    googleAccessToken: googleToken,
+    setGoogleToken, removeGoogleToken,
+  } = useApiKeysStore();
 
-  const [searchTerm, setSearchTerm] = useState('');
+  // GMB Store
+  const {
+    gmbProfiles,
+    activeProfileId, setActiveProfileId,
+    scrapedReviews,
+    gbpRules,
+    brandVoices,
+    addProfile: addGmbProfile,
+    removeProfile: removeGmbProfile,
+    updateProfile: updateGmbProfile,
+    setScrapedReviews: setProfileScrapedReviews,
+    setAllScrapedReviews,
+    updateRule: handleUpdateRule,
+    getProfileRules,
+    updateBrandVoice,
+    getBrandVoice,
+  } = useGmbStore();
 
-  const [selectedCategory, setSelectedCategory] = useState('all');
+  // Scenarios Store
+  const {
+    scenarios, setScenarios,
+    selectedScenarioId, setSelectedScenarioId,
+    deployedScenarios, setDeployedScenarios,
+    scenarioExecutions,
+    updateStepContent,
+    insertStepAtIndex,
+    reorderSteps,
+    addScenarioExecution,
+    setScenarioExecutions,
+  } = useScenariosStore();
 
-  const [selectedTool, setSelectedTool] = useState(null);
+  // Clients Store
+  const {
+    clientsList, setClientsList,
+    agencyPricingBase, setAgencyPricingBase,
+    agencyPricingPerReview, setAgencyPricingPerReview,
+    telemetryRuns, setTelemetryRuns,
+    addTelemetryRun,
+  } = useClientsStore();
+
+  // ──────────────────────────────────────────────────────────────
+  // Bridge helpers — adapt store API to match existing App.jsx API
+  // ──────────────────────────────────────────────────────────────
+
+  // setApiKeys wrapper: accepts function updater or object
+  const setApiKeys = (valOrFn) => {
+    if (typeof valOrFn === 'function') {
+      const current = useApiKeysStore.getState().apiKeys;
+      const next = valOrFn(current);
+      mergeApiKeys(next);
+    } else {
+      mergeApiKeys(valOrFn);
+    }
+  };
+
+  // setTestStatus wrapper: accepts function updater
+  const setTestStatus = (valOrFn) => {
+    if (typeof valOrFn === 'function') {
+      const current = useApiKeysStore.getState().testStatus;
+      const updated = valOrFn(current);
+      Object.entries(updated).forEach(([k, v]) => setTestStatusField(k, v));
+    } else {
+      Object.entries(valOrFn).forEach(([k, v]) => setTestStatusField(k, v));
+    }
+  };
+
+  // setGmbProfiles wrapper: accepts function updater or array
+  const setGmbProfiles = (valOrFn) => {
+    if (typeof valOrFn === 'function') {
+      const current = useGmbStore.getState().gmbProfiles;
+      const next = valOrFn(current);
+      useGmbStore.setState({ gmbProfiles: next });
+    } else {
+      useGmbStore.setState({ gmbProfiles: valOrFn });
+    }
+  };
+
+  // setScrapedReviews wrapper: accepts function updater or object (full map)
+  const setScrapedReviews = (valOrFn) => {
+    if (typeof valOrFn === 'function') {
+      const current = useGmbStore.getState().scrapedReviews;
+      const next = valOrFn(current);
+      setAllScrapedReviews(next);
+    } else {
+      setAllScrapedReviews(valOrFn);
+    }
+  };
+
+  // setBrandVoices wrapper
+  const setBrandVoices = (valOrFn) => {
+    if (typeof valOrFn === 'function') {
+      const current = useGmbStore.getState().brandVoices;
+      const next = valOrFn(current);
+      useGmbStore.setState({ brandVoices: next });
+    } else {
+      useGmbStore.setState({ brandVoices: valOrFn });
+    }
+  };
+
+  // setGbpRules wrapper
+  const setGbpRules = (valOrFn) => {
+    if (typeof valOrFn === 'function') {
+      const current = useGmbStore.getState().gbpRules;
+      const next = valOrFn(current);
+      useGmbStore.setState({ gbpRules: next });
+    } else {
+      useGmbStore.setState({ gbpRules: valOrFn });
+    }
+  };
+
+  // setKeyConfigMethod wrapper
+  const setKeyConfigMethod = (valOrFn) => {
+    if (typeof valOrFn === 'function') {
+      const current = useApiKeysStore.getState().keyConfigMethod;
+      const next = valOrFn(current);
+      useApiKeysStore.setState({ keyConfigMethod: next });
+    } else {
+      useApiKeysStore.setState({ keyConfigMethod: valOrFn });
+    }
+  };
+
+  // setClientsList bridge: already destructured from store but need updater support
+  const setClientsListBridge = (valOrFn) => {
+    if (typeof valOrFn === 'function') {
+      const current = useClientsStore.getState().clientsList;
+      setClientsList(valOrFn(current));
+    } else {
+      setClientsList(valOrFn);
+    }
+  };
+
+  // Initialize API keys from env on first load
+  React.useEffect(() => {
+    const envKeys = {
+      "gemini-omni": import.meta.env.VITE_GEMINI_API_KEY || "",
+      "gpt-4o": import.meta.env.VITE_OPENAI_API_KEY || "",
+      "claude-3-5": import.meta.env.VITE_CLAUDE_API_KEY || "",
+      "perplexity": import.meta.env.VITE_PERPLEXITY_API_KEY || "",
+      "groq": import.meta.env.VITE_GROQ_API_KEY || "",
+      "deepseek-r1": import.meta.env.VITE_DEEPSEEK_API_KEY || "",
+      "elevenlabs": import.meta.env.VITE_ELEVENLABS_API_KEY || "",
+      "n8n": import.meta.env.VITE_N8N_API_KEY || "",
+      "n8n_url": import.meta.env.VITE_N8N_URL || "",
+      "airtable": import.meta.env.VITE_AIRTABLE_TOKEN || "",
+      "notion": import.meta.env.VITE_NOTION_TOKEN || "",
+      "telegram": import.meta.env.VITE_TELEGRAM_BOT_TOKEN || "",
+      "stability-ai": import.meta.env.VITE_STABILITY_API_KEY || "",
+      "linear": import.meta.env.VITE_LINEAR_API_KEY || "",
+      "stripe": import.meta.env.VITE_STRIPE_API_KEY || "",
+      "make": import.meta.env.VITE_MAKE_API_KEY || "",
+      "googleClientId": import.meta.env.VITE_GOOGLE_CLIENT_ID || "",
+      "googleClientSecret": import.meta.env.VITE_GOOGLE_CLIENT_SECRET || "",
+    };
+    useApiKeysStore.getState().loadFromEnv(envKeys);
+  }, []);
+
+  // ──────────────────────────────────────────────────────────────
+  // LOCAL-ONLY STATES — These stay as useState (form inputs, modals, etc.)
+  // ──────────────────────────────────────────────────────────────
 
   // States for visual no-code scenario editor
 
@@ -164,233 +361,17 @@ export default function App() {
 
   const [modalActionInput, setModalActionInput] = useState('');
 
-  const updateStepContent = (scenarioId, stepId, tool, action) => {
-
-    setScenarios(prev => prev.map(s => {
-
-      if (s.id === scenarioId) {
-
-        return {
-
-          ...s,
-
-          steps: s.steps.map(st => st.id === stepId ? { ...st, tool, action } : st)
-
-        };
-
-      }
-
-      return s;
-
-    }));
-
-    triggerToast("Étape mise à jour !");
-
-  };
-
-  const insertStepAtIndex = (scenarioId, index, tool, action) => {
-
-    const stepId = `step-${Date.now()}`;
-
-    const newStep = { id: stepId, tool, action };
-
-    setScenarios(prev => prev.map(s => {
-
-      if (s.id === scenarioId) {
-
-        const newSteps = [...s.steps];
-
-        newSteps.splice(index, 0, newStep);
-
-        return { ...s, steps: newSteps };
-
-      }
-
-      return s;
-
-    }));
-
-    triggerToast("Nouvelle étape insérée !");
-
-  };
-
-  const reorderSteps = (scenarioId, fromIndex, toIndex) => {
-
-    const fIdx = typeof fromIndex === 'string' ? parseInt(fromIndex, 10) : fromIndex;
-
-    const tIdx = typeof toIndex === 'string' ? parseInt(toIndex, 10) : toIndex;
-
-    if (isNaN(fIdx) || isNaN(tIdx)) return;
-
-    setScenarios(prev => prev.map(s => {
-
-      if (s.id === scenarioId) {
-
-        const newSteps = [...s.steps].filter(Boolean);
-
-        if (fIdx < 0 || fIdx >= newSteps.length || tIdx < 0 || tIdx >= newSteps.length) {
-
-          return s;
-
-        }
-
-        const [moved] = newSteps.splice(fIdx, 1);
-
-        if (moved) {
-
-          newSteps.splice(tIdx, 0, moved);
-
-        }
-
-        return { ...s, steps: newSteps };
-
-      }
-
-      return s;
-
-    }));
-
-    triggerToast("Ordre des étapes mis à jour !");
-
-  };
+  // updateStepContent, insertStepAtIndex, reorderSteps → now from useScenariosStore
 
   
 
-  // Custom & Default Scenarios initialized with categories
-
-  // Custom & Default Scenarios initialized with categories
-
-  const [scenarios, setScenarios] = useState(() => {
-
-    const baseScenarios = INITIAL_SCENARIOS.map(s => {
-
-      let category = s.category || "Autre";
-
-      if (!s.category) {
-
-        if (["gmb-responder", "restaurant-feedback", "restaurant-menu"].includes(s.id)) category = "Restauration / Commerces";
-
-        else if (["tiktok-production", "youtube-automation", "podcast-editor", "video-dubbing", "linkedin-authority"].includes(s.id)) category = "Création de Contenu";
-
-        else if (["saas-launch", "saas-onboarding"].includes(s.id)) category = "SaaS & Développement";
-
-        else if (["b2b-outreach", "lead-magnet", "sponsor-outreach", "voice-outreach"].includes(s.id)) category = "Prospection & B2B";
-
-        else if (["real-estate", "airbnb-host", "rental-yield"].includes(s.id)) category = "Immobilier & Hôtellerie";
-
-        else if (["ecom-ads", "ecom-winback", "testimonial-widget"].includes(s.id)) category = "E-Commerce & Publicité";
-
-        else if (["hr-screener"].includes(s.id)) category = "Ressources Humaines";
-
-        else if (["support-agent"].includes(s.id)) category = "Support & Service Client";
-
-        else if (["legal-reviewer", "gdpr-compliance"].includes(s.id)) category = "Juridique & Conformité";
-
-        else if (["medical-followup"].includes(s.id)) category = "Santé & Médical";
-
-        else if (["market-sentiment"].includes(s.id)) category = "Veille & Marché";
-
-        else if (["newsletter-repurpose", "local-seo"].includes(s.id)) category = "SEO & Contenu Web";
-
-        else if (["online-course", "course-certification"].includes(s.id)) category = "Éducation & Formation";
-
-        else if (["gym-lead-flow"].includes(s.id)) category = "Sport & Bien-être";
-
-        else if (["artisan-quote-builder"].includes(s.id)) category = "Artisanat & Services";
-
-        else if (["webinar-autopilot"].includes(s.id)) category = "Événementiel";
-
-        else if (["competitor-price"].includes(s.id)) category = "Pricing & Veille";
-
-      }
-
-      return {
-
-        id: String(s.id || ''),
-
-        name: String(s.name || 'Sans nom'),
-
-        category: String(category || 'Autre'),
-
-        steps: Array.isArray(s.steps) ? s.steps.map((st, idx) => ({
-
-          id: String(st.id || `step-${idx}`),
-
-          tool: String(st.tool || ''),
-
-          action: String(st.action || '')
-
-        })) : []
-
-      };
-
-    });
-
-    const saved = localStorage.getItem('aura_scenarios');
-
-    if (saved) {
-
-      try {
-
-        const parsed = JSON.parse(saved);
-
-        if (Array.isArray(parsed)) {
-
-          const cleanedSaved = parsed.map(s => {
-
-            if (s && typeof s === 'object' && s.id && typeof s.id === 'string') {
-
-              const cleanedSteps = Array.isArray(s.steps)
-
-                ? s.steps.filter(st => st && typeof st === 'object' && st.id && st.tool)
-
-                : [];
-
-              return {
-
-                id: String(s.id),
-
-                name: String(s.name || 'Sans nom'),
-
-                category: String(s.category || 'Autre'),
-
-                steps: cleanedSteps.map((st, idx) => ({
-
-                  id: String(st.id || `step-${idx}`),
-
-                  tool: String(st.tool || ''),
-
-                  action: String(st.action || '')
-
-                }))
-
-              };
-
-            }
-
-            return null;
-
-          }).filter(Boolean);
-
-          // Merge missing initial scenarios
-
-          const savedIds = new Set(cleanedSaved.map(s => s.id));
-
-          const missing = baseScenarios.filter(s => s.id && !savedIds.has(s.id));
-
-          return [...cleanedSaved, ...missing];
-
-        }
-
-      } catch (e) {}
-
-    }
-
-    return baseScenarios;
-
-  });
-
-  const [selectedScenarioId, setSelectedScenarioId] = useState('gmb-responder');
+  // Scenarios initialization — now handled by useScenariosStore (Zustand persist)
+  // Initialize missing initial scenarios on first load
+  React.useEffect(() => {
+    useScenariosStore.getState().initializeScenarios(INITIAL_SCENARIOS);
+  }, []);
+
+  // selectedScenarioId → now from useScenariosStore
 
   const [newStepTool, setNewStepTool] = useState('Google Gemini Omni / Astra');
 
@@ -416,35 +397,7 @@ export default function App() {
 
   const [simEfficiency, setSimEfficiency] = useState(null);
 
-  // Connection config method states (API key, Email/Password, Google SSO)
-
-  const [keyConfigMethod, setKeyConfigMethod] = useState(() => {
-
-    try {
-
-      const saved = localStorage.getItem('aura_key_methods');
-
-      if (saved) {
-
-        const parsed = JSON.parse(saved);
-
-        if (parsed && typeof parsed === 'object') {
-
-          return parsed;
-
-        }
-
-      }
-
-    } catch (e) {
-
-      console.error("Error loading key config methods:", e);
-
-    }
-
-    return {};
-
-  });
+  // keyConfigMethod, handleUpdateKeyMethod → now from useApiKeysStore
 
   const [googleSSOPendingTool, setGoogleSSOPendingTool] = useState(null);
 
@@ -453,12 +406,6 @@ export default function App() {
   const [oauthProgress, setOauthProgress] = useState(0);
 
   const [oauthLogs, setOauthLogs] = useState([]);
-
-  const handleUpdateKeyMethod = (toolId, method) => {
-
-    setKeyConfigMethod(prev => ({ ...prev, [toolId]: method }));
-
-  };
 
   // GMB Dashboard Grid Search & Category Filter states
 
@@ -469,6 +416,17 @@ export default function App() {
   // Live Action Workspace (Terminal IA réel)
 
   const [actionMode, setActionMode] = useState('scenario');
+
+  const activeScenario = useMemo(() => {
+    if (activeTab === 'live-action') {
+      if (actionMode === 'gmb') return scenarios.find(s => s.id === 'gmb-responder') || scenarios[0];
+      if (actionMode === 'tiktok') return scenarios.find(s => s.id === 'tiktok-production') || scenarios[0];
+      if (actionMode === 'saas') return scenarios.find(s => s.id === 'saas-launch') || scenarios[0];
+      if (actionMode === 'outreach') return scenarios.find(s => s.id === 'b2b-outreach') || scenarios[0];
+      if (actionMode === 'youtube') return scenarios.find(s => s.id === 'youtube-automation') || scenarios[0];
+    }
+    return scenarios.find(s => s.id === selectedScenarioId) || scenarios[0];
+  }, [scenarios, selectedScenarioId, activeTab, actionMode]);
 
   const [gmbReviewInput, setGmbReviewInput] = useState("Très satisfait des services de cette entreprise, prestation de qualité et personnel professionnel. Je recommande vivement.");
 
@@ -498,116 +456,8 @@ export default function App() {
 
   const [youtubeDuration, setYoutubeDuration] = useState("10 min");
 
-  const [apiKeys, setApiKeys] = useState(() => {
-
-    const defaultKeys = {};
-
-    AI_TOOLS_DATABASE.forEach(t => {
-
-      defaultKeys[t.id] = "";
-
-    });
-
-    defaultKeys["googleClientId"] = "";
-
-    defaultKeys["googleClientSecret"] = "";
-
-    const envKeys = {
-      "gemini-omni": import.meta.env.VITE_GEMINI_API_KEY || "",
-      "gpt-4o": import.meta.env.VITE_OPENAI_API_KEY || "",
-      "claude-3-5": import.meta.env.VITE_CLAUDE_API_KEY || "",
-      "perplexity": import.meta.env.VITE_PERPLEXITY_API_KEY || "",
-      "groq": import.meta.env.VITE_GROQ_API_KEY || "",
-      "deepseek-r1": import.meta.env.VITE_DEEPSEEK_API_KEY || "",
-      "elevenlabs": import.meta.env.VITE_ELEVENLABS_API_KEY || "",
-      "n8n": import.meta.env.VITE_N8N_API_KEY || "",
-      "n8n_url": import.meta.env.VITE_N8N_URL || "",
-      "airtable": import.meta.env.VITE_AIRTABLE_TOKEN || "",
-      "notion": import.meta.env.VITE_NOTION_TOKEN || "",
-      "telegram": import.meta.env.VITE_TELEGRAM_BOT_TOKEN || "",
-      "stability-ai": import.meta.env.VITE_STABILITY_API_KEY || "",
-      "linear": import.meta.env.VITE_LINEAR_API_KEY || "",
-      "stripe": import.meta.env.VITE_STRIPE_API_KEY || "",
-      "make": import.meta.env.VITE_MAKE_API_KEY || "",
-      "googleClientId": import.meta.env.VITE_GOOGLE_CLIENT_ID || "",
-      "googleClientSecret": import.meta.env.VITE_GOOGLE_CLIENT_SECRET || ""
-    };
-
-    try {
-
-      const saved = localStorage.getItem('aura_api_keys');
-
-      if (saved) {
-
-        const parsed = JSON.parse(saved);
-
-        if (parsed && typeof parsed === 'object') {
-
-          const merged = { ...defaultKeys, ...envKeys };
-          Object.keys(parsed).forEach(k => {
-            if (parsed[k] !== undefined && parsed[k] !== "") {
-              merged[k] = parsed[k];
-            }
-          });
-          return merged;
-
-        }
-
-      }
-
-    } catch (e) {
-
-      console.error("Error loading API keys:", e);
-
-    }
-
-    return { ...defaultKeys, ...envKeys };
-
-  });
-
-  const [gmbProfiles, setGmbProfiles] = useState(() => {
-
-    try {
-
-      const saved = localStorage.getItem('aura_gmb_profiles');
-
-      if (saved) {
-
-        const parsed = JSON.parse(saved);
-
-        if (Array.isArray(parsed)) {
-
-          const filtered = parsed.filter(p => 
-
-            p && 
-
-            p.location && 
-
-            !p.location.toLowerCase().includes('pizzeria') && 
-
-            !p.location.toLowerCase().includes('votre entreprise cible') &&
-
-            p.id !== 'prof-default' &&
-
-            p.id !== 'prof-1'
-
-          );
-
-          return filtered;
-
-        }
-
-      }
-
-    } catch (e) {
-
-      console.error("Error loading GMB profiles:", e);
-
-    }
-
-    return [];
-
-  });
+  // apiKeys → now from useApiKeysStore
+  // gmbProfiles → now from useGmbStore
 
   const [keysSearchTerm, setKeysSearchTerm] = useState('');
 
@@ -631,7 +481,7 @@ export default function App() {
 
   const [isScanningGmb, setIsScanningGmb] = useState(false);
 
-  const [testStatus, setTestStatus] = useState({});
+  // testStatus → now from useApiKeysStore
 
   // States for Smart GMB Discover lookup feature
 
@@ -643,201 +493,15 @@ export default function App() {
 
   const [isEditingSearchResult, setIsEditingSearchResult] = useState(false);
 
-  const [googleToken, setGoogleToken] = useState(() => {
-
-    return localStorage.getItem('aura_google_token') || '';
-
-  });
+  // googleToken → now from useApiKeysStore
 
   const [gmailMessages, setGmailMessages] = useState([]);
 
   const [isGmailLoading, setIsGmailLoading] = useState(false);
 
-  // telemetryRuns state and storage persistence
-
-  const [telemetryRuns, setTelemetryRuns] = useState(() => {
-
-    const defaultRuns = [
-
-      {
-
-        id: "run-1",
-
-        timestamp: new Date(Date.now() - 4 * 3600000).toISOString(),
-
-        scenarioName: "GMB Auto-Pilot Responder",
-
-        status: "success",
-
-        durationMs: 820,
-
-        tokensUsed: 450,
-
-        costEur: 0.00135,
-
-        logs: [
-
-          "Détection d'un nouvel avis Google Business Profile entrant",
-
-          "Traitement et génération d'une réponse par Claude 3.5 Sonnet",
-
-          "Envoi automatique de la réponse via le webhook Make.com",
-
-          "Réponse publiée avec succès"
-
-        ]
-
-      },
-
-      {
-
-        id: "run-2",
-
-        timestamp: new Date(Date.now() - 12 * 3600000).toISOString(),
-
-        scenarioName: "TikTok Faceless Video Generator",
-
-        status: "success",
-
-        durationMs: 1450,
-
-        tokensUsed: 1200,
-
-        costEur: 0.00360,
-
-        logs: [
-
-          "Recherche automatisée de tendances par Perplexity Pro",
-
-          "Génération du script vidéo sur Claude 3.5 Sonnet",
-
-          "Synthèse vocale (Rachel) réalisée via ElevenLabs Voice Engine",
-
-          "Rendu vidéo et mise en ligne programmée avec Make.com"
-
-        ]
-
-      },
-
-      {
-
-        id: "run-3",
-
-        timestamp: new Date(Date.now() - 28 * 3600000).toISOString(),
-
-        scenarioName: "B2B Outreach Sequence",
-
-        status: "error",
-
-        durationMs: 250,
-
-        tokensUsed: 0,
-
-        costEur: 0.00000,
-
-        logs: [
-
-          "Extraction de leads LinkedIn Sales Navigator via n8n",
-
-          "Erreur d'accès : Clé API LinkedIn introuvable ou expirée"
-
-        ]
-
-      }
-
-    ];
-
-    try {
-
-      const saved = localStorage.getItem('aura_telemetry_runs');
-
-      if (saved) {
-
-        const parsed = JSON.parse(saved);
-
-        if (Array.isArray(parsed)) {
-
-          return parsed;
-
-        }
-
-      }
-
-    } catch (e) {
-
-      console.error("Error loading telemetry runs:", e);
-
-    }
-
-    return defaultRuns;
-
-  });
-
-  useEffect(() => {
-
-    localStorage.setItem('aura_telemetry_runs', JSON.stringify(telemetryRuns));
-
-  }, [telemetryRuns]);
-
-  // gbpRules state and storage persistence
-
-  const [gbpRules, setGbpRules] = useState(() => {
-
-    const defaultRules = {
-
-      'prof-1': {
-
-        minRating: 4,
-
-        notifySlack: true,
-
-        sensitiveKeywords: ["arnaque", "voleur", "faux", "rembourser", "procès", "tribunal"]
-
-      },
-
-      'prof-2': {
-
-        minRating: 4,
-
-        notifySlack: false,
-
-        sensitiveKeywords: ["incompétent", "danger", "pire", "catastrophe"]
-
-      }
-
-    };
-
-    try {
-
-      const saved = localStorage.getItem('aura_gbp_rules');
-
-      if (saved) {
-
-        const parsed = JSON.parse(saved);
-
-        if (parsed && typeof parsed === 'object') {
-
-          return parsed;
-
-        }
-
-      }
-
-    } catch (e) {
-
-      console.error("Error loading GMB rules:", e);
-
-    }
-
-    return defaultRules;
-
-  });
-
-  useEffect(() => {
-
-    localStorage.setItem('aura_gbp_rules', JSON.stringify(gbpRules));
-
-  }, [gbpRules]);
+  // telemetryRuns → now from useClientsStore
+  // gbpRules → now from useGmbStore
+  // (localStorage persistence handled by Zustand persist middleware)
 
   // ROI Calculator states
 
@@ -863,39 +527,7 @@ export default function App() {
 
   const [missingToolsList, setMissingToolsList] = useState([]);
 
-  const [deployedScenarios, setDeployedScenarios] = useState(() => {
-
-    try {
-
-      const saved = localStorage.getItem('aura_deployed_scenarios');
-
-      if (saved) {
-
-        const parsed = JSON.parse(saved);
-
-        if (Array.isArray(parsed)) {
-
-          return parsed;
-
-        }
-
-      }
-
-    } catch (e) {
-
-      console.error("Error loading deployed scenarios:", e);
-
-    }
-
-    return [];
-
-  });
-
-  useEffect(() => {
-
-    localStorage.setItem('aura_deployed_scenarios', JSON.stringify(deployedScenarios));
-
-  }, [deployedScenarios]);
+  // deployedScenarios → now from useScenariosStore
 
   const deployTerminalRef = useRef(null);
 
@@ -909,37 +541,7 @@ export default function App() {
 
   }, [deployLogs]);
 
-  // Selected target company state for automation
-
-  const [activeProfileId, setActiveProfileId] = useState(() => {
-
-    const saved = localStorage.getItem('aura_active_profile_id');
-
-    if (saved && saved !== 'prof-1' && saved !== 'prof-default') {
-
-      return saved;
-
-    }
-
-    return '';
-
-  });
-
-  // Ensure activeProfileId stays in sync with the single target company
-
-  useEffect(() => {
-
-    if (gmbProfiles.length > 0 && !gmbProfiles.some(p => p.id === activeProfileId)) {
-
-      setActiveProfileId(gmbProfiles[0].id);
-
-    } else if (gmbProfiles.length === 0 && activeProfileId !== '') {
-
-      setActiveProfileId('');
-
-    }
-
-  }, [gmbProfiles, activeProfileId]);
+  // activeProfileId → now from useGmbStore (auto-sync handled by store subscription)
 
   // State to determine if we are in manual fill mode or choosing registered
 
@@ -968,212 +570,31 @@ export default function App() {
   const [scrapingProgress, setScrapingProgress] = useState(0);
 
   const [scrapingLogs, setScrapingLogs] = useState([]);
-
   
-
-  // Scraped reviews list
-
-  const [scrapedReviews, setScrapedReviews] = useState(() => {
-
-    try {
-
-      const saved = localStorage.getItem('aura_scraped_reviews');
-
-      if (saved) {
-
-        const parsed = JSON.parse(saved);
-
-        if (parsed && typeof parsed === 'object') {
-
-          return parsed;
-
-        }
-
-      }
-
-    } catch (e) {
-
-      console.error("Error loading scraped reviews from localStorage:", e);
-
-    }
-
-    return {};
-
-  });
+  // scrapedReviews → now from useGmbStore
 
   // Review Scenario Execution states
-
   const [activeReviewExecutingId, setActiveReviewExecutingId] = useState(null);
-
   const [reviewExecutionLogs, setReviewExecutionLogs] = useState([]);
-
   const [reviewExecutionProgress, setReviewExecutionProgress] = useState(0);
-
   const [reviewExecutionOutput, setReviewExecutionOutput] = useState("");
-
   const [showReviewExecutionModal, setShowReviewExecutionModal] = useState(false);
-
   const [reviewExecutionStep, setReviewExecutionStep] = useState(-1);
-
   const [isPublishingReply, setIsPublishingReply] = useState(false);
 
-  useEffect(() => {
-
-    localStorage.setItem('aura_active_profile_id', activeProfileId);
-
-  }, [activeProfileId]);
-
-  useEffect(() => {
-
-    localStorage.setItem('aura_scraped_reviews', JSON.stringify(scrapedReviews));
-
-  }, [scrapedReviews]);
+  // localStorage persistence for activeProfileId and scrapedReviews → handled by Zustand persist
 
   // Scenarios View Mode ('list' or 'canvas')
-
   const [scenariosViewMode, setScenariosViewMode] = useState('canvas');
 
-  // White-Labeling Branding
-
-  const [agencyName, setAgencyName] = useState(() => localStorage.getItem('aura_agency_name') || 'AURA Agency Autopilot');
-
-  const [primaryBrandTheme, setPrimaryBrandTheme] = useState(() => localStorage.getItem('aura_brand_theme') || 'indigo');
-
-  // Client Management Hub
-
-  const [clientsList, setClientsList] = useState(() => {
-
-    const defaultClients = [
-
-      { id: 'cli-1', name: 'Alimentation & Co', contact: 'Marc Rossi', email: 'marc@aliment-co.com', phone: '06 12 34 56 78', status: 'active', assignedProfiles: ['prof-1'] },
-
-      { id: 'cli-2', name: 'Artisans du Rhône', contact: 'Stéphane Bernard', email: 's.bernard@rhone-artisan.fr', phone: '07 89 45 12 36', status: 'active', assignedProfiles: ['prof-2'] },
-
-      { id: 'cli-3', name: 'Influenceur HairStyle Paris', contact: 'Jessica Miller', email: 'jessica@hairstyle-paris.fr', phone: '06 99 88 77 66', status: 'pending', assignedProfiles: [] }
-
-    ];
-
-    try {
-
-      const saved = localStorage.getItem('aura_clients_list');
-
-      if (saved) {
-
-        const parsed = JSON.parse(saved);
-
-        if (Array.isArray(parsed)) {
-
-          return parsed;
-
-        }
-
-      }
-
-    } catch (e) {
-
-      console.error("Error loading clients list from localStorage:", e);
-
-    }
-
-    return defaultClients;
-
-  });
-
+  // Local-only client form states
   const [selectedClientId, setSelectedClientId] = useState('all');
-
   const [newClientName, setNewClientName] = useState('');
-
   const [newClientContact, setNewClientContact] = useState('');
-
   const [newClientEmail, setNewClientEmail] = useState('');
-
   const [newClientPhone, setNewClientPhone] = useState('');
-
   const [newClientStatus, setNewClientStatus] = useState('active');
-
   const [newClientAssignedProfiles, setNewClientAssignedProfiles] = useState([]);
-
-  // Brand Voice (AI Personas) per profile
-
-  const [brandVoices, setBrandVoices] = useState(() => {
-
-    const defaultVoices = {
-
-      'prof-default': { tone: 'professionnel', emojiUsage: 'moyen', tabooWords: ['désolé'], signature: 'L\'équipe de Votre Entreprise' },
-
-      'prof-2': { tone: 'formel', emojiUsage: 'aucun', tabooWords: ['excuse', 'pardon'], signature: 'Le Service Technique Plomberie Lyon Express' }
-
-    };
-
-    try {
-
-      const saved = localStorage.getItem('aura_brand_voices');
-
-      if (saved) {
-
-        const parsed = JSON.parse(saved);
-
-        if (parsed && typeof parsed === 'object') {
-
-          return parsed;
-
-        }
-
-      }
-
-    } catch (e) {
-
-      console.error("Error loading brand voices from localStorage:", e);
-
-    }
-
-    return defaultVoices;
-
-  });
-
-  // Agency Pricing Settings
-
-  const [agencyPricingBase, setAgencyPricingBase] = useState(() => Number(localStorage.getItem('aura_pricing_base') || '49'));
-
-  const [agencyPricingPerReview, setAgencyPricingPerReview] = useState(() => Number(localStorage.getItem('aura_pricing_per_review') || '0.50'));
-
-  // White-label & client persistence
-
-  useEffect(() => {
-
-    localStorage.setItem('aura_agency_name', agencyName);
-
-  }, [agencyName]);
-
-  useEffect(() => {
-
-    localStorage.setItem('aura_brand_theme', primaryBrandTheme);
-
-  }, [primaryBrandTheme]);
-
-  useEffect(() => {
-
-    localStorage.setItem('aura_clients_list', JSON.stringify(clientsList));
-
-  }, [clientsList]);
-
-  useEffect(() => {
-
-    localStorage.setItem('aura_brand_voices', JSON.stringify(brandVoices));
-
-  }, [brandVoices]);
-
-  useEffect(() => {
-
-    localStorage.setItem('aura_pricing_base', agencyPricingBase.toString());
-
-  }, [agencyPricingBase]);
-
-  useEffect(() => {
-
-    localStorage.setItem('aura_pricing_per_review', agencyPricingPerReview.toString());
-
-  }, [agencyPricingPerReview]);
 
   // Multi-Agent states
 
@@ -1309,87 +730,12 @@ Restons en contact pour configurer votre essai gratuit de 14 jours !`;
 
   }, [roiCalculations, roiNumReviews, roiMinutesPerReview]);
 
-  const handleUpdateRule = (profileId, key, value) => {
+  // handleUpdateRule, getProfileRules, getBrandVoice → now from useGmbStore
 
-    setGbpRules(prev => {
+  // localStorage persistence for api_keys, gmb_profiles, scenarios, key_methods
+  // → now all handled by Zustand persist middleware
 
-      const updated = {
-
-        ...prev,
-
-        [profileId]: {
-
-          ...prev[profileId],
-
-          [key]: value
-
-        }
-
-      };
-
-      return updated;
-
-    });
-
-  };
-
-  const getProfileRules = (profileId) => {
-
-    const rules = gbpRules[profileId] || {};
-
-    return {
-
-      minRating: rules.minRating ?? 4,
-
-      notifySlack: rules.notifySlack ?? false,
-
-      sensitiveKeywords: rules.sensitiveKeywords || []
-
-    };
-
-  };
-
-  const getBrandVoice = (profileId) => {
-
-    const voice = brandVoices[profileId] || {};
-
-    return {
-
-      tone: voice.tone || 'professionnel',
-
-      emojiUsage: voice.emojiUsage || 'faible',
-
-      tabooWords: voice.tabooWords || [],
-
-      signature: voice.signature || ''
-
-    };
-
-  };
-
-  useEffect(() => {
-
-    localStorage.setItem('aura_api_keys', JSON.stringify(apiKeys));
-
-  }, [apiKeys]);
-
-  useEffect(() => {
-
-    localStorage.setItem('aura_gmb_profiles', JSON.stringify(gmbProfiles));
-
-  }, [gmbProfiles]);
-
-  useEffect(() => {
-
-    localStorage.setItem('aura_scenarios', JSON.stringify(scenarios));
-
-  }, [scenarios]);
-
-  useEffect(() => {
-
-    localStorage.setItem('aura_key_methods', JSON.stringify(keyConfigMethod));
-
-  }, [keyConfigMethod]);
+  
 
   // Handle popup OAuth postMessage listener
 
@@ -1406,8 +752,6 @@ Restons en contact pour configurer votre essai gratuit de 14 jours !`;
         if (token) {
 
           setGoogleToken(token);
-
-          localStorage.setItem('aura_google_token', token);
 
           triggerToast("Authentification API Google OAuth réussie !");
 
@@ -1430,263 +774,7 @@ Restons en contact pour configurer votre essai gratuit de 14 jours !`;
   }, []);
 
   // --- Antigravity Voice & Command Helpers ---
-  const startSpeechRecognition = (onTranscript, onEnd) => {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      triggerToast("⚠️ La reconnaissance vocale n'est pas supportée dans votre navigateur.");
-      return null;
-    }
-    const recognition = new SpeechRecognition();
-    recognition.lang = 'fr-FR';
-    recognition.continuous = false;
-    recognition.interimResults = false;
-    recognition.maxAlternatives = 1;
 
-    recognition.onresult = (event) => {
-      const transcript = event.results[0][0].transcript;
-      onTranscript(transcript);
-    };
-
-    recognition.onend = () => {
-      if (onEnd) onEnd();
-    };
-
-    recognition.onerror = (event) => {
-      console.error("Speech recognition error", event.error);
-      if (onEnd) onEnd();
-    };
-
-    recognition.start();
-    return recognition;
-  };
-
-  const parseStepVoiceDescription = (text) => {
-    const textLower = text.toLowerCase();
-    let detectedTool = "";
-    
-    if (textLower.includes("slack")) {
-      detectedTool = "Slack";
-    } else if (textLower.includes("gmail") || textLower.includes("email") || textLower.includes("e-mail") || textLower.includes("courriel")) {
-      detectedTool = "Gmail";
-    } else if (textLower.includes("sheet") || textLower.includes("sheets") || textLower.includes("tableur") || textLower.includes("google sheets") || textLower.includes("excel")) {
-      detectedTool = "Google Sheets";
-    } else if (textLower.includes("twilio") || textLower.includes("sms")) {
-      detectedTool = "Twilio";
-    } else if (textLower.includes("bland") || textLower.includes("appel") || textLower.includes("téléphone") || textLower.includes("voix")) {
-      detectedTool = "Bland.ai";
-    } else if (textLower.includes("elevenlabs") || textLower.includes("synthèse vocale") || textLower.includes("audio")) {
-      detectedTool = "ElevenLabs";
-    } else if (textLower.includes("notion")) {
-      detectedTool = "Notion";
-    } else if (textLower.includes("openai") || textLower.includes("gemini") || textLower.includes("claude") || textLower.includes("gpt") || textLower.includes("ia") || textLower.includes("llm") || textLower.includes("intelligence artificielle")) {
-      detectedTool = "Gemini IA";
-    } else if (textLower.includes("airtable")) {
-      detectedTool = "Airtable";
-    } else if (textLower.includes("stripe") || textLower.includes("paiement")) {
-      detectedTool = "Stripe";
-    } else if (textLower.includes("shopify") || textLower.includes("boutique")) {
-      detectedTool = "Shopify";
-    }
-    
-    return { tool: detectedTool, action: text };
-  };
-
-  const processAntigravityCommand = async (cmdText) => {
-    if (!cmdText.trim()) return;
-    
-    const userMsg = { sender: 'user', text: cmdText };
-    setAntigravityMessages(prev => [...prev, userMsg]);
-    setAntigravityCommandInput('');
-    
-    const text = cmdText.toLowerCase();
-    let reply = null;
-    let actionTaken = false;
-    
-    // 1. Navigation Commands
-    if (text.includes("onglet") || text.includes("va sur") || text.includes("affiche") || text.includes("montre") || text.includes("ouvre")) {
-      if (text.includes("réglage") || text.includes("setting") || text.includes("configuration")) {
-        setActiveTab('settings');
-        reply = "Fait ! J'ai ouvert l'onglet des configurations et réglages.";
-        actionTaken = true;
-      } else if (text.includes("scénario") || text.includes("scenario") || text.includes("flux")) {
-        setActiveTab('scenarios');
-        reply = "Fait ! J'ai ouvert l'onglet des scénarios et automatisation.";
-        actionTaken = true;
-      } else if (text.includes("client")) {
-        setActiveTab('clients');
-        reply = "Fait ! J'ai ouvert l'onglet de gestion des clients.";
-        actionTaken = true;
-      } else if (text.includes("profil") || text.includes("gmb")) {
-        setActiveTab('profiles');
-        reply = "Fait ! J'ai ouvert l'onglet des profils Google My Business.";
-        actionTaken = true;
-      } else if (text.includes("catalogue") || text.includes("outil")) {
-        setActiveTab('catalog');
-        reply = "Fait ! J'ai ouvert le catalogue des outils d'IA.";
-        actionTaken = true;
-      } else if (text.includes("télémétrie") || text.includes("telemetry") || text.includes("historique")) {
-        setActiveTab('telemetry');
-        reply = "Fait ! J'ai ouvert l'onglet de télémétrie des exécutions.";
-        actionTaken = true;
-      } else if (text.includes("roi") || text.includes("rentabilité") || text.includes("calcul")) {
-        setActiveTab('roi');
-        reply = "Fait ! J'ai ouvert le simulateur de ROI.";
-        actionTaken = true;
-      } else if (text.includes("live") || text.includes("chat")) {
-        setActiveTab('live-action');
-        reply = "Fait ! J'ai ouvert le module Live Action.";
-        actionTaken = true;
-      }
-    }
-    
-    // 2. Theme Commands
-    if (!actionTaken && (text.includes("thème") || text.includes("theme") || text.includes("couleur"))) {
-      if (text.includes("émeraude") || text.includes("vert") || text.includes("emerald")) {
-        setPrimaryBrandTheme('emerald');
-        reply = "Fait ! J'ai activé le thème Émeraude.";
-        actionTaken = true;
-      } else if (text.includes("violet") || text.includes("purple") || text.includes("violette")) {
-        setPrimaryBrandTheme('violet');
-        reply = "Fait ! J'ai activé le thème Violet.";
-        actionTaken = true;
-      } else if (text.includes("rose") || text.includes("pink")) {
-        setPrimaryBrandTheme('rose');
-        reply = "Fait ! J'ai activé le thème Rose.";
-        actionTaken = true;
-      } else if (text.includes("ambre") || text.includes("orange") || text.includes("amber")) {
-        setPrimaryBrandTheme('amber');
-        reply = "Fait ! J'ai activé le thème Ambre.";
-        actionTaken = true;
-      } else if (text.includes("indigo") || text.includes("bleu")) {
-        setPrimaryBrandTheme('indigo');
-        reply = "Fait ! J'ai activé le thème Indigo.";
-        actionTaken = true;
-      }
-    }
-    
-    // 3. API Keys Config Commands
-    if (!actionTaken && (text.includes("clé api") || text.includes("api key") || text.includes("token"))) {
-      const match = cmdText.match(/(openai|n8n|gemini|elevenlabs|bland)\s+sur\s+(.+)$/i);
-      if (match) {
-        const keyName = match[1].toLowerCase();
-        const keyValue = match[2].trim();
-        setApiKeys(prev => ({ ...prev, [keyName]: keyValue }));
-        reply = `Fait ! J'ai configuré la clé API pour "${keyName}".`;
-        actionTaken = true;
-      }
-    }
-
-    // 3b. Agency Rename Command
-    if (!actionTaken && text.includes("agence") && (text.includes("nom") || text.includes("appelle") || text.includes("renomme") || text.includes("change"))) {
-      const match = cmdText.match(/(?:agence en|agence|l'agence)\s+([^,.]+)/i);
-      if (match) {
-        const newName = match[1].trim();
-        setAgencyName(newName);
-        reply = `Fait ! Le nom de l'agence a été modifié pour : "${newName}".`;
-        actionTaken = true;
-      }
-    }
-
-    // 3c. Platform Selector Command
-    if (!actionTaken && (text.includes("plateforme") || (text.includes("automation") && (text.includes("n8n") || text.includes("make"))))) {
-      if (text.includes("n8n")) {
-        setAutomationPlatform('n8n');
-        reply = "Fait ! La plateforme d'automatisation active est désormais n8n.";
-        actionTaken = true;
-      } else if (text.includes("make")) {
-        setAutomationPlatform('make');
-        reply = "Fait ! La plateforme d'automatisation active est désormais Make.com.";
-        actionTaken = true;
-      }
-    }
-    
-    // 4. Client creation
-    if (!actionTaken && (text.includes("crée un client") || text.includes("ajoute le client") || text.includes("nouveau client"))) {
-      const match = cmdText.match(/(?:client|l'utilisateur)\s+([^,.]+)/i);
-      if (match) {
-        const name = match[1].trim();
-        const newClient = {
-          id: `client-${Date.now()}`,
-          name: name,
-          businessType: "Commerce Local",
-          location: "Paris, FR",
-          joinedDate: new Date().toISOString().split('T')[0],
-          monthlyReviews: 0,
-          activeCampaigns: 0,
-          automationActive: false,
-          avatarUrl: `https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80`
-        };
-        setClientsList(prev => [...prev, newClient]);
-        reply = `Fait ! J'ai ajouté le client "${name}" dans la liste des clients.`;
-        actionTaken = true;
-      }
-    }
-    
-    // 5. MCP control
-    if (!actionTaken && (text.includes("mcp") || (text.includes("serveur") && (text.includes("connecte") || text.includes("déconnecte"))))) {
-      if (text.includes("connecte") || text.includes("active") || text.includes("démarre")) {
-        const match = text.match(/(google|n8n|make)/i);
-        if (match) {
-          const serv = match[1];
-          setMcpServers(prev => prev.map(s => s.name.toLowerCase().includes(serv) ? { ...s, status: 'connected' } : s));
-          reply = `Fait ! Le serveur MCP pour "${serv}" a été connecté avec succès.`;
-          actionTaken = true;
-        }
-      } else if (text.includes("déconnecte") || text.includes("coupe") || text.includes("arrête")) {
-        const match = text.match(/(google|n8n|make)/i);
-        if (match) {
-          const serv = match[1];
-          setMcpServers(prev => prev.map(s => s.name.toLowerCase().includes(serv) ? { ...s, status: 'disconnected' } : s));
-          reply = `Fait ! Le serveur MCP pour "${serv}" a été déconnecté.`;
-          actionTaken = true;
-        }
-      }
-    }
-    
-    // 6. Launch simulation
-    if (!actionTaken && (text.includes("simule") || text.includes("lance la simulation") || text.includes("test le flux"))) {
-      if (activeScenario && activeScenario.steps.length > 0) {
-        runScenarioSimulation();
-        reply = `Fait ! J'ai déclenché la simulation vocale du scénario : "${activeScenario.name}".`;
-        actionTaken = true;
-      } else {
-        reply = "Aucun scénario actif ou le scénario ne contient pas d'étapes à simuler.";
-        actionTaken = true;
-      }
-    }
-    
-    // 7. Deploy scenario
-    if (!actionTaken && (text.includes("déploie") || text.includes("lance l'automatisation"))) {
-      if (activeScenario && activeScenario.steps.length > 0) {
-        handleLaunchAutomationPipeline();
-        reply = `Fait ! J'ai orchestré et déployé le scénario "${activeScenario.name}" vers n8n.`;
-        actionTaken = true;
-      } else {
-        reply = "Veuillez activer un scénario valide avant de demander un déploiement.";
-        actionTaken = true;
-      }
-    }
-
-    // 8. If no action matched, use Gemini AI for intelligent response
-    if (!actionTaken || reply === null) {
-      // Show typing indicator
-      const typingId = Date.now();
-      setAntigravityMessages(prev => [...prev, { sender: 'bot', text: '...', isTyping: true, id: typingId }]);
-      try {
-        const systemPrompt = `Tu es Antigravity, un chef d'orchestre d'intelligence artificielle intégré dans le logiciel Aura — une plateforme d'automatisation marketing et de gestion d'agence. Tu contrôles vocalement et textuellement tous les paramètres du logiciel Aura. Tu peux: naviguer entre les onglets (catalogue, scénarios, clients, profils, télémétrie, ROI, réglages), changer le thème de couleur, configurer des clés API, gérer les serveurs MCP, créer des clients, simuler et déployer des scénarios. Réponds toujours en français, de manière concise, professionnelle et utile. Si l'utilisateur te pose une question générale sur le logiciel ou l'IA, réponds intelligemment. Si tu détectes une intention de commande, confirme l'action et guide l'utilisateur.`;
-        const aiReply = await callGeminiAPI(cmdText, systemPrompt);
-        setAntigravityMessages(prev => prev.filter(m => !(m.isTyping && m.id === typingId)).concat([{ sender: 'bot', text: aiReply }]));
-      } catch (err) {
-        setAntigravityMessages(prev => prev.filter(m => !(m.isTyping && m.id === typingId)).concat([{ sender: 'bot', text: reply || "Je n'ai pas pu traiter cette demande. Essayez : 'affiche les réglages', 'active le thème violet', ou 'ajoute le client Dupont'." }]));
-      }
-      return;
-    }
-    
-    // For matched actions, respond after brief delay
-    setTimeout(() => {
-      setAntigravityMessages(prev => [...prev, { sender: 'bot', text: reply }]);
-    }, 400);
-  };
 
   const handleAntigravityVoiceClick = () => {
     if (isListeningAntigravity) {
@@ -1778,7 +866,8 @@ Restons en contact pour configurer votre essai gratuit de 14 jours !`;
 
   const [aiLogs, setAiLogs] = useState([]);
 
-  const [toastMessage, setToastMessage] = useState("");
+  // toastMessage → now from useUIStore (via triggerToast action)
+  const toastMessage = useUIStore(s => s.toastMessage);
 
   const [giftRecipient, setGiftRecipient] = useState('');
 
@@ -1800,17 +889,7 @@ Restons en contact pour configurer votre essai gratuit de 14 jours !`;
 
   }, [aiLogs]);
 
-  const triggerToast = (msg) => {
-
-    setToastMessage(msg);
-
-    setTimeout(() => {
-
-      setToastMessage("");
-
-    }, 3000);
-
-  };
+  // triggerToast → now from useUIStore
 
   const copyToClipboard = (text) => {
 
@@ -1894,25 +973,7 @@ Restons en contact pour configurer votre essai gratuit de 14 jours !`;
 
   }, [keysSearchTerm]);
 
-  const activeScenario = useMemo(() => {
 
-    if (activeTab === 'live-action') {
-
-      if (actionMode === 'gmb') return scenarios.find(s => s.id === 'gmb-responder') || scenarios[0];
-
-      if (actionMode === 'tiktok') return scenarios.find(s => s.id === 'tiktok-production') || scenarios[0];
-
-      if (actionMode === 'saas') return scenarios.find(s => s.id === 'saas-launch') || scenarios[0];
-
-      if (actionMode === 'outreach') return scenarios.find(s => s.id === 'b2b-outreach') || scenarios[0];
-
-      if (actionMode === 'youtube') return scenarios.find(s => s.id === 'youtube-automation') || scenarios[0];
-
-    }
-
-    return scenarios.find(s => s.id === selectedScenarioId) || scenarios[0];
-
-  }, [scenarios, selectedScenarioId, activeTab, actionMode]);
 
   // Unique categories in scenarios (combines default + user created)
 
@@ -2752,33 +1813,7 @@ Directives de style pour cette marque :
 
   // Scenario Simulator Execution
 
-  const runScenarioSimulation = () => {
-
-    if (!activeScenario || activeScenario.steps.length === 0) {
-
-      triggerToast("Impossible de simuler un scénario vide !");
-
-      return;
-
-    }
-
-    setIsSimulating(true);
-
-    setSimCurrentStep(0);
-
-    setSimLogs([{
-
-      time: new Date().toLocaleTimeString(),
-
-      text: `[SYSTEM] Démarrage de la simulation pour : "${activeScenario.name}"`,
-
-      type: 'system'
-
-    }]);
-
-    setSimEfficiency(null);
-
-  };
+  
 
   // Simulator Stepper Effect
 
@@ -3357,174 +2392,27 @@ Directives de style pour cette marque :
   };
 
   const fetchRealGmailInbox = async () => {
-
-    if (!googleToken) {
-
-      triggerToast("Aucun jeton OAuth valide. Connectez d'abord votre compte Google.");
-
-      return;
-
-    }
-
     setIsGmailLoading(true);
-
     setGmailMessages([]);
-
     try {
-
-      const response = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=5&q=is:unread', {
-
-        headers: {
-
-          'Authorization': `Bearer ${googleToken}`
-
-        }
-
-      });
-
-      if (!response.ok) {
-
-        throw new Error(`Erreur API Gmail (${response.status}). Le jeton a peut-être expiré.`);
-
-      }
-
-      const data = await response.json();
-
-      if (data.messages && data.messages.length > 0) {
-
-        const detailPromises = data.messages.map(async (msg) => {
-
-          const detailRes = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.id}`, {
-
-            headers: { 'Authorization': `Bearer ${googleToken}` }
-
-          });
-
-          return detailRes.json();
-
-        });
-
-        const details = await Promise.all(detailPromises);
-
-        const mapped = details.map((m) => {
-
-          const headers = m.payload.headers;
-
-          const subject = headers.find(h => h.name === 'Subject')?.value || 'Sans objet';
-
-          const from = headers.find(h => h.name === 'From')?.value || 'Expéditeur Inconnu';
-
-          const snippet = m.snippet || '';
-
-          return { id: m.id, from, subject, snippet };
-
-        });
-
-        setGmailMessages(mapped);
-
+      const msgs = await fetchGmailRecentMails(googleToken);
+      if (msgs.length > 0) {
+        setGmailMessages(msgs);
         triggerToast("Messages Gmail récupérés en direct !");
-
       } else {
-
         triggerToast("Aucun message non lu trouvé dans votre boîte de réception.");
-
       }
-
     } catch (err) {
-
       triggerToast(err.message);
-
       if (err.message.includes('401') || err.message.includes('expired')) {
-
         handleGoogleOAuthLogout();
-
       }
-
     } finally {
-
       setIsGmailLoading(false);
-
     }
-
   };
 
-  const runGmbScan = async () => {
-
-    setIsScanningGmb(true);
-
-    setActionMode('gmb');
-
-    setActiveTab('live-action');
-
-    setIsAiLoading(true);
-
-    setAiLogs([]);
-
-    setAiOutput("");
-
-    const pushLog = (text, type = 'info') => {
-
-      setAiLogs(prev => [...prev, { time: new Date().toLocaleTimeString(), text, type }]);
-
-    };
-
-    try {
-
-      pushLog("Lancement du Scan Global d'E-Réputation AURA 2026...", 'system');
-
-      await new Promise(r => setTimeout(r, 600));
-
-      gmbProfiles.forEach((profile) => {
-
-        pushLog(`Analyse de la boîte mail sync : ${profile.email}`, 'info');
-
-        pushLog(`Fiche GBP ciblée : ${profile.location}`, 'info');
-
-        pushLog(`Statut de liaison : ${googleToken ? 'OAuth ACTIF' : 'NON ASSOCIÉ'}`, googleToken ? 'success' : 'error');
-
-      });
-
-      await new Promise(r => setTimeout(r, 800));
-
-      pushLog("Vérification des files d'attente d'avis clients en cours...", 'system');
-
-      
-
-      if (googleToken) {
-
-        pushLog("Connexion en direct à l'API Google OAuth réussie.", 'success');
-
-        await fetchRealGmailInbox();
-
-      } else {
-
-        pushLog("Pas de jeton d'authentification OAuth actif détecté. Simulation de diagnostic...", 'info');
-
-      }
-
-      setGmbProfiles(prev => prev.map(p => ({ ...p, pendingReviews: 0, status: 'active' })));
-
-      
-
-      await new Promise(r => setTimeout(r, 900));
-
-      pushLog("Scan terminé ! Tous les profils connectés sont à jour.", 'success');
-
-      setAiOutput("Scan d'E-Réputation d'Élite réussi.\n\nRésultat : 100% des avis traités pour vos fiches connectées.\nLiaison de synchronisation Active avec Make.com en arrière-plan.");
-
-    } catch (err) {
-
-      pushLog(`Erreur de scan : ${err.message}`, 'error');
-
-    } finally {
-
-      setIsAiLoading(false);
-
-      setIsScanningGmb(false);
-
-    }
-
-  };
+  
 
   // ==========================================
 
@@ -3533,139 +2421,27 @@ Directives de style pour cette marque :
   // ==========================================
 
   const callGeminiAPI = async (prompt, systemInstruction) => {
-
     const activeKey = apiKeys["gemini-omni"];
-
-    if (!activeKey || activeKey.trim() === '') {
-
-      setAiLogs(prev => [...prev, {
-
-        time: new Date().toLocaleTimeString(),
-
-        text: "[WARNING] Clé API Gemini manquante. Mode simulation (fictif) activé.",
-
-        type: 'system'
-
-      }]);
-
-      return getMockAiResponse(prompt);
-
-    }
-
-    const model = selectedGeminiModel || "gemini-2.5-flash-preview-09-2025";
-
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${activeKey}`;
-
-    
-
-    const payload = {
-
-      contents: [{ parts: [{ text: prompt }] }],
-
-      systemInstruction: { parts: [{ text: systemInstruction }] }
-
-    };
-
-    const response = await fetch(url, {
-
-      method: 'POST',
-
-      headers: {
-
-        'Content-Type': 'application/json'
-
-      },
-
-      body: JSON.stringify(payload)
-
-    });
-
-    
-
-    if (response.ok) {
-
-      const result = await response.json();
-
-      return result.candidates?.[0]?.content?.parts?.[0]?.text || "Aucun contenu n'a pu être renvoyé par l'IA.";
-
-    } else {
-
-      const errorText = await response.text();
-
-      let parsedError;
-
-      try {
-
-        parsedError = JSON.parse(errorText);
-
-      } catch (e) {
-
-        parsedError = { error: { message: "Erreur brute du serveur." } };
-
+    try {
+      return await callGeminiServiceAPI(prompt, systemInstruction, activeKey, selectedGeminiModel);
+    } catch (err) {
+      if (err.message.includes("manquante")) {
+        setAiLogs(prev => [...prev, {
+          time: new Date().toLocaleTimeString(),
+          text: "[WARNING] Clé API Gemini manquante. Mode simulation (fictif) activé.",
+          type: 'system'
+        }]);
+        return getMockAiResponse(prompt);
       }
-
-      throw new Error(`Erreur API Google (${response.status}) : ${parsedError.error?.message || "Veuillez vérifier votre clé d'accès."}`);
-
+      throw err;
     }
-
   };
 
   const executeRealElevenLabsTTS = async (textToSpeak) => {
-
     const activeElevenKey = apiKeys["elevenlabs"];
-
-    if (!activeElevenKey || activeElevenKey.trim() === '') {
-
-      throw new Error("Clé API ElevenLabs manquante dans vos configurations.");
-
-    }
-
-    const voiceId = "21m00Tcm4TlvDq8ikWAM"; // Rachel Voice
-
-    const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
-
-      method: 'POST',
-
-      headers: {
-
-        'xi-api-key': activeElevenKey,
-
-        'Content-Type': 'application/json'
-
-      },
-
-      body: JSON.stringify({
-
-        text: textToSpeak,
-
-        model_id: "eleven_multilingual_v2",
-
-        voice_settings: {
-
-          stability: 0.5,
-
-          similarity_boost: 0.75
-
-        }
-
-      })
-
-    });
-
-    if (!response.ok) {
-
-      throw new Error(`Erreur ElevenLabs API (${response.status})`);
-
-    }
-
-    const audioBlob = await response.blob();
-
-    const audioUrl = URL.createObjectURL(audioBlob);
-
+    const audioUrl = await executeRealElevenLabsTTSService(textToSpeak, activeElevenKey);
     const audio = new Audio(audioUrl);
-
     audio.play();
-
   };
 
   const testSpecificConnection = async (toolId) => {
@@ -3790,6 +2566,17 @@ Directives de style pour cette marque :
             triggerToast("✓ Connexion Groq validée !");
           }
 
+        } else if (toolId === "n8n") {
+          const result = await testN8nConnection(toolKey, apiKeys["n8n_url"]);
+          if (result.success) {
+            setTestStatus(prev => ({ ...prev, [toolId]: 'success' }));
+            if (result.corsFallback) {
+              triggerToast(`✓ Clé n8n enregistrée ! (Validée par signature, appel direct bloqué par CORS)`);
+            } else {
+              triggerToast(`✓ Connexion n8n validée avec succès ! (URL: ${result.url})`);
+            }
+          }
+
         } else if (toolId === "deepseek-r1") {
           if (!toolKey.startsWith("sk-") || toolKey.startsWith("sk-ant-") || toolKey.startsWith("sk_")) {
             throw new Error("Format de clé DeepSeek invalide. Doit commencer par 'sk-'.");
@@ -3812,67 +2599,6 @@ Directives de style pour cette marque :
           if (isSuccess) {
             setTestStatus(prev => ({ ...prev, [toolId]: 'success' }));
             triggerToast("✓ Connexion ElevenLabs validée !");
-          }
-
-        } else if (toolId === "n8n") {
-          let n8nBase = (apiKeys["n8n_url"] || "").trim().replace(/\/$/, "");
-          if (!n8nBase) {
-            throw new Error("Veuillez renseigner l'URL de votre instance n8n.");
-          }
-          if (!/^https?:\/\//i.test(n8nBase)) {
-            if (n8nBase.startsWith("localhost") || n8nBase.startsWith("127.0.0.1") || n8nBase.includes("192.168.") || n8nBase.includes("10.")) {
-              n8nBase = "http://" + n8nBase;
-            } else {
-              n8nBase = "https://" + n8nBase;
-            }
-            setApiKeys(prev => ({ ...prev, n8n_url: n8nBase }));
-          }
-          if (!toolKey.startsWith("n8n_api_") && !/^[a-zA-Z0-9_-]{16,}$/.test(toolKey)) {
-            throw new Error("Format de clé API n8n invalide. Elle doit faire au moins 16 caractères alphanumériques.");
-          }
-          try {
-            const res = await fetch(`${n8nBase}/api/v1/workflows?limit=1`, {
-              headers: { "X-N8N-API-KEY": toolKey }
-            });
-            if (res.status === 401) {
-              throw new Error("Clé API n8n invalide (401). Vérifiez dans n8n → Settings → API Keys.");
-            }
-            if (res.status === 403 || res.status === 404) {
-              // Community Edition API restriction fallback: check if server healthz endpoint responds
-              try {
-                const healthRes = await fetch(`${n8nBase}/healthz`);
-                if (healthRes.ok) {
-                  setTestStatus(prev => ({ ...prev, [toolId]: 'success' }));
-                  triggerToast("✓ Connexion n8n validée ! (Instance Community détectée via /healthz).");
-                  return;
-                }
-              } catch (healthErr) {
-                // Ignore health check CORS block
-              }
-              // If server responds with 403/404, it means the host is active and responsive.
-              setTestStatus(prev => ({ ...prev, [toolId]: 'success' }));
-              triggerToast(`✓ Connexion n8n validée ! (URL active, format clé ${toolKey.substring(0, 12)}...).`);
-              return;
-            }
-            if (!res.ok) {
-              throw new Error(`Erreur n8n ${res.status}. Vérifiez l'URL de votre instance.`);
-            }
-            setTestStatus(prev => ({ ...prev, [toolId]: 'success' }));
-            triggerToast("✓ Connexion n8n validée avec succès !");
-          } catch (e) {
-            // Any network error, CORS error, AbortError, or DOMException
-            try {
-              const healthRes = await fetch(`${n8nBase}/healthz`);
-              if (healthRes.ok) {
-                setTestStatus(prev => ({ ...prev, [toolId]: 'success' }));
-                triggerToast("✓ Connexion n8n validée ! (L'instance est en ligne, l'appel d'admin est limité par CORS).");
-                return;
-              }
-            } catch (healthErr) {
-              // CORS or network error on healthz too
-            }
-            setTestStatus(prev => ({ ...prev, [toolId]: 'success' }));
-            triggerToast("✓ Connexion n8n validée (Format & URL valides). Note : L'appel direct est restreint par CORS, mais fonctionnera via Aura !");
           }
 
         } else if (toolId === "airtable") {
@@ -4974,7 +3700,7 @@ L'objet JSON doit respecter rigoureusement cette structure :
     { name: 'Server-Make-Bridge', status: 'disconnected', type: 'Make.com relay' }
   ]);
 
-  const [showScrollTop, setShowScrollTop] = useState(false);
+  // showScrollTop → now from useUIStore
 
   useEffect(() => {
     const handleScroll = () => {
@@ -4995,6 +3721,59 @@ L'objet JSON doit respecter rigoureusement cette structure :
   const [automationPlatform, setAutomationPlatform] = useState('n8n');
 
   const [automationJSON, setAutomationJSON] = useState('');
+
+  
+
+  const { runGmbScan } = useGmbScanner({
+    gmbProfiles,
+    apiKeys,
+    setScrapedReviews,
+    triggerToast,
+    setIsScanningGmb
+  });
+
+  const { runScenarioSimulation } = useScenarioSimulator({
+    activeScenario,
+    setIsSimulating,
+    setSimLogs,
+    setSimCurrentStep,
+    setSimEfficiency,
+    triggerToast
+  });
+
+  const { handleLaunchAutomationPipeline } = useDeployPipeline({
+    activeScenario,
+    automationPlatform,
+    apiKeys,
+    setAutomationJSON,
+    setIsLaunchingAutomation,
+    setAutomationError,
+    setShowAutomationModal,
+    setDeployLogs,
+    setDeployedWorkflowId,
+    setDeployedWorkflowUrl,
+    triggerToast
+  });
+
+  const {
+    processAntigravityCommand,
+    startSpeechRecognition,
+    parseStepVoiceDescription
+  } = useAntigravityCommands(
+    setAntigravityMessages,
+    setAntigravityCommandInput,
+    setActiveTab,
+    setPrimaryBrandTheme,
+    setApiKeys,
+    setAgencyName,
+    setAutomationPlatform,
+    setClientsList,
+    setMcpServers,
+    runScenarioSimulation,
+    activeScenario,
+    handleLaunchAutomationPipeline,
+    callGeminiAPI
+  );
 
   const getThemeClasses = () => {
 
@@ -5206,611 +3985,13 @@ L'objet JSON doit respecter rigoureusement cette structure :
 
   };
 
-  const getN8nNodeConfig = (step, index) => {
-    const tool = String(step.tool || '').toLowerCase();
-    const action = String(step.action || '').toLowerCase();
+  
 
-    // Default configuration (HTTP Request)
-    let type = "n8n-nodes-base.httpRequest";
-    let typeVersion = 4.1;
-    let parameters = {
-      url: "https://api.example.com/v1/action",
-      method: "POST",
-      sendBody: true,
-      specifyBody: "json",
-      jsonParameters: false,
-      jsonBody: JSON.stringify({ 
-        action: step.action,
-        input_data: "={{ $json.output || $json.text || $json.message }}"
-      })
-    };
+  
 
-    // --- SPECIALIZED HTTP API ENDPOINTS FOR AURA TOOLS ---
-    
-    // Bland.ai (AI Calls)
-    if (tool.includes("bland")) {
-      type = "n8n-nodes-base.httpRequest";
-      typeVersion = 4.1;
-      parameters = {
-        url: "https://api.bland.ai/v1/calls",
-        method: "POST",
-        sendHeaders: true,
-        headerParameters: {
-          parameters: [
-            { name: "authorization", value: "YOUR_BLAND_API_KEY" }
-          ]
-        },
-        sendBody: true,
-        specifyBody: "json",
-        jsonParameters: false,
-        jsonBody: JSON.stringify({
-          phone_number: "+1234567890",
-          task: `Tâche AURA : ${step.action}`,
-          voice: "rachel",
-          input_data: {
-            previous_context: "={{ $json.output || $json.text || $json.message }}"
-          }
-        })
-      };
-    }
-    // ElevenLabs (AI Text to Speech)
-    else if (tool.includes("elevenlabs")) {
-      type = "n8n-nodes-base.httpRequest";
-      typeVersion = 4.1;
-      parameters = {
-        url: "https://api.elevenlabs.io/v1/text-to-speech/21m00Tcm4TlvDq8ikWAM",
-        method: "POST",
-        sendHeaders: true,
-        headerParameters: {
-          parameters: [
-            { name: "xi-api-key", value: "YOUR_ELEVENLABS_API_KEY" }
-          ]
-        },
-        sendBody: true,
-        specifyBody: "json",
-        jsonParameters: false,
-        jsonBody: JSON.stringify({
-          text: "={{ $json.output || $json.text || $json.message || 'Bonjour' }}",
-          model_id: "eleven_monolingual_v1",
-          voice_settings: {
-            stability: 0.5,
-            similarity_boost: 0.75
-          }
-        })
-      };
-    }
-    // Attio CRM
-    else if (tool.includes("attio")) {
-      type = "n8n-nodes-base.httpRequest";
-      typeVersion = 4.1;
-      parameters = {
-        url: "https://api.attio.com/v2/records",
-        method: "POST",
-        sendHeaders: true,
-        headerParameters: {
-          parameters: [
-            { name: "Authorization", value: "Bearer YOUR_ATTIO_TOKEN" }
-          ]
-        },
-        sendBody: true,
-        specifyBody: "json",
-        jsonParameters: false,
-        jsonBody: JSON.stringify({
-          data: {
-            values: {
-              notes: "={{ $json.output || $json.text || $json.message }}",
-              action_desc: step.action
-            }
-          }
-        })
-      };
-    }
-    // Invoice Ninja
-    else if (tool.includes("ninja") || tool.includes("invoice")) {
-      type = "n8n-nodes-base.httpRequest";
-      typeVersion = 4.1;
-      parameters = {
-        url: "https://demo.invoiceninja.com/api/v1/invoices",
-        method: "POST",
-        sendHeaders: true,
-        headerParameters: {
-          parameters: [
-            { name: "X-API-TOKEN", value: "YOUR_INVOICE_NINJA_TOKEN" }
-          ]
-        },
-        sendBody: true,
-        specifyBody: "json",
-        jsonParameters: false,
-        jsonBody: JSON.stringify({
-          client_id: "CLIENT_ID",
-          amount: 100,
-          notes: "={{ $json.output || $json.text || $json.message }}",
-          description: step.action
-        })
-      };
-    }
+  
 
-    // --- NATIVE N8N NODES WITH DYNAMIC EXPRESSIONS ---
-
-    // 1. OpenAI / Gemini / Claude / DeepSeek / IA / LLM
-    else if (tool.includes("openai") || tool.includes("gpt") || tool.includes("gemini") || tool.includes("claude") || tool.includes("deepseek") || tool.includes("ia") || tool.includes("assistant")) {
-      type = "n8n-nodes-base.openAi";
-      typeVersion = 1.1;
-      parameters = {
-        resource: "chat",
-        operation: "create",
-        model: tool.includes("gemini") ? "gemini-1.5-pro" : tool.includes("deepseek") ? "deepseek-reasoner" : "gpt-4o",
-        messages: {
-          messageValues: [
-            {
-              role: "system",
-              message: `Tu es un assistant IA spécialisé. Ta tâche est : ${step.action}. Réponds en français.`
-            },
-            {
-              role: "user",
-              message: "={{ $json.body || $json.text || $json.message || 'Exécuter la tâche' }}"
-            }
-          ]
-        },
-        options: {
-          temperature: 0.7
-        }
-      };
-    }
-    // 2. Google Sheets
-    else if (tool.includes("sheet") || tool.includes("tableur")) {
-      type = "n8n-nodes-base.googleSheets";
-      typeVersion = 4;
-      const isRead = action.includes("lire") || action.includes("extraire") || action.includes("chercher") || action.includes("trouver") || action.includes("récupérer");
-      parameters = {
-        resource: "spreadsheet",
-        operation: isRead ? "read" : "appendRow",
-        spreadsheetId: {
-          __rl: true,
-          value: "SPREADSHEET_ID",
-          mode: "id"
-        },
-        sheetName: {
-          __rl: true,
-          value: "Feuille 1",
-          mode: "name"
-        },
-        options: {},
-        ...(isRead ? {} : {
-          columns: {
-            mappingMode: "defineBelow",
-            value: {
-              date: "={{ $now }}",
-              action: step.action,
-              resultat: "={{ $json.output || $json.text || $json.message }}"
-            }
-          }
-        })
-      };
-    }
-    // 3. Gmail / Google Email / E-mail / Outlook / Email
-    else if (tool.includes("email") || tool.includes("gmail") || tool.includes("mail") || tool.includes("courriel")) {
-      type = "n8n-nodes-base.gmail";
-      typeVersion = 2;
-      const isSend = action.includes("envoyer") || action.includes("répondre") || action.includes("expédier") || action.includes("send");
-      parameters = {
-        resource: "message",
-        operation: isSend ? "send" : "getAll",
-        emailAs: "text",
-        ...(isSend ? {
-          subject: `=AURA - Suivi automatique : ${step.action.slice(0, 30)}...`,
-          emailType: "text",
-          message: "=Bonjour,\n\nVoici le résultat généré par l'automatisation AURA :\n\n{{ $json.output || $json.text || $json.message }}\n\nCordialement,\nVotre Agent AURA",
-          to: ["destinataire@example.com"]
-        } : {
-          limit: 5,
-          simple: true
-        })
-      };
-    }
-    // 4. Slack / Mou
-    else if (tool.includes("slack") || tool.includes("mou")) {
-      type = "n8n-nodes-base.slack";
-      typeVersion = 2;
-      parameters = {
-        resource: "message",
-        operation: "post",
-        select: "channel",
-        channelId: {
-          __rl: true,
-          value: "general",
-          mode: "name"
-        },
-        messageType: "text",
-        text: `=📢 *AURA Automatisation*\n*Action :* ${step.action}\n*Résultat :* {{ $json.output || $json.text || $json.message }}`
-      };
-    }
-    // 5. Telegram / Télégramme
-    else if (tool.includes("telegram") || tool.includes("télégramme")) {
-      type = "n8n-nodes-base.telegram";
-      typeVersion = 1;
-      parameters = {
-        resource: "message",
-        operation: "sendMessage",
-        chatId: "CHAT_ID",
-        text: `=📢 *AURA Notification*\n*Action :* ${step.action}\n*Résultat :* {{ $json.output || $json.text || $json.message }}`
-      };
-    }
-    // 6. Notion
-    else if (tool.includes("notion")) {
-      type = "n8n-nodes-base.notion";
-      typeVersion = 2;
-      parameters = {
-        resource: "databasePage",
-        operation: "create",
-        databaseId: {
-          __rl: true,
-          value: "DATABASE_ID",
-          mode: "id"
-        },
-        properties: {
-          propertyValues: [
-            {
-              key: "Name",
-              title: `=AURA : ${step.action.slice(0, 50)}`
-            },
-            {
-              key: "Description",
-              richText: [
-                {
-                  text: {
-                    content: "={{ $json.output || $json.text || $json.message }}"
-                  }
-                }
-              ]
-            }
-          ]
-        }
-      };
-    }
-    // 7. Airtable
-    else if (tool.includes("airtable")) {
-      type = "n8n-nodes-base.airtable";
-      typeVersion = 2;
-      parameters = {
-        resource: "record",
-        operation: "append",
-        application: {
-          __rl: true,
-          value: "APP_ID",
-          mode: "id"
-        },
-        table: {
-          __rl: true,
-          value: "TABLE_NAME",
-          mode: "name"
-        },
-        columns: {
-          columnValues: [
-            {
-              fieldName: "Tache",
-              fieldValue: step.action
-            },
-            {
-              fieldName: "Resultat",
-              fieldValue: "={{ $json.output || $json.text || $json.message }}"
-            }
-          ]
-        }
-      };
-    }
-    // 8. Shopify
-    else if (tool.includes("shopify")) {
-      type = "n8n-nodes-base.shopify";
-      typeVersion = 1;
-      parameters = {
-        resource: "order",
-        operation: "get",
-        orderId: "={{ $json.body.order_id || $json.id || 'ORDER_ID' }}"
-      };
-    }
-    // 9. Webhook / Forms trigger
-    else if (tool.includes("webhook") || tool.includes("forms") || tool.includes("formulaire") || tool.includes("porte")) {
-      type = "n8n-nodes-base.webhook";
-      typeVersion = 2;
-      parameters = {
-        path: `aura-webhook-node-${index}`,
-        httpMethod: "POST",
-        responseMode: "onReceived",
-        options: {}
-      };
-    }
-    // 10. ActiveCampaign
-    else if (tool.includes("activecampaign")) {
-      type = "n8n-nodes-base.activeCampaign";
-      typeVersion = 1;
-      parameters = {
-        resource: "contact",
-        operation: "create",
-        email: "={{ $json.email || 'email@example.com' }}",
-        firstName: "={{ $json.firstName || 'Client' }}",
-        lastName: "AURA"
-      };
-    }
-    // 11. Twilio
-    else if (tool.includes("twilio") || tool.includes("sms")) {
-      type = "n8n-nodes-base.twilio";
-      typeVersion = 1;
-      parameters = {
-        resource: "sms",
-        operation: "send",
-        from: "SENDER_NUMBER",
-        to: "RECIPIENT_NUMBER",
-        message: `=AURA : {{ $json.output || $json.text || $json.message }}`
-      };
-    }
-    // 12. Google Calendar / Calendrier
-    else if (tool.includes("calendar") || tool.includes("calendrier")) {
-      type = "n8n-nodes-base.googleCalendar";
-      typeVersion = 2;
-      parameters = {
-        resource: "event",
-        operation: "create",
-        calendarId: {
-          __rl: true,
-          value: "primary",
-          mode: "id"
-        },
-        start: "={{ $now }}",
-        end: "={{ $now.plus({hours: 1}) }}",
-        summary: `Rendez-vous AURA : ${step.action.slice(0, 30)}`,
-        description: "=Liaison AURA :\n\n{{ $json.output || $json.text || $json.message }}"
-      };
-    }
-    // 13. Google Drive / Drive
-    else if (tool.includes("drive")) {
-      type = "n8n-nodes-base.googleDrive";
-      typeVersion = 3;
-      parameters = {
-        resource: "file",
-        operation: "list",
-        options: {}
-      };
-    }
-
-    return { type, typeVersion, parameters };
-  };
-
-  const getMakeModuleConfig = (step, index) => {
-    const tool = String(step.tool || '').toLowerCase();
-    const action = String(step.action || '').toLowerCase();
-
-    // Default configuration
-    let module = "gateway:custom-webhook";
-    let mapper = {
-      action: step.action,
-      tool: step.tool,
-      input_data: "{{1.output}}"
-    };
-
-    // 1. Gmail / Google Email
-    if (tool.includes("email") || tool.includes("gmail") || tool.includes("mail") || tool.includes("courriel")) {
-      const isSend = action.includes("envoyer") || action.includes("répondre") || action.includes("expédier") || action.includes("send");
-      module = isSend ? "gmail:SendAnEmail" : "gmail:WatchEmails";
-      mapper = isSend ? {
-        subject: `[AURA] Suivi automatique : ${step.action.slice(0, 30)}`,
-        content: "{{1.output}}",
-        to: ["destinataire@example.com"]
-      } : {
-        folder: "INBOX",
-        filter: "UNREAD"
-      };
-    }
-    // 2. Google Sheets
-    else if (tool.includes("sheet") || tool.includes("tableur")) {
-      const isRead = action.includes("lire") || action.includes("extraire") || action.includes("chercher") || action.includes("trouver") || action.includes("récupérer");
-      module = isRead ? "google-sheets:SearchRows" : "google-sheets:AddARow";
-      mapper = isRead ? {
-        spreadsheetId: "SPREADSHEET_ID",
-        sheetName: "Feuille 1",
-        query: step.action
-      } : {
-        spreadsheetId: "SPREADSHEET_ID",
-        sheetName: "Feuille 1",
-        values: {
-          A: "{{now}}",
-          B: step.action,
-          C: "{{1.output}}"
-        }
-      };
-    }
-    // 3. Slack
-    else if (tool.includes("slack") || tool.includes("mou")) {
-      module = "slack:CreateAMessage";
-      mapper = {
-        channel: "general",
-        text: `[AURA] Notification :\n{{1.output}}`
-      };
-    }
-    // 4. Telegram
-    else if (tool.includes("telegram") || tool.includes("télégramme")) {
-      module = "telegram:SendMessage";
-      mapper = {
-        chatId: "CHAT_ID",
-        text: `[AURA] Notification :\n{{1.output}}`
-      };
-    }
-    // 5. Notion
-    else if (tool.includes("notion")) {
-      module = "notion:CreateAPage";
-      mapper = {
-        databaseId: "DATABASE_ID",
-        properties: {
-          Name: `AURA : ${step.action.slice(0, 40)}`,
-          Content: "{{1.output}}"
-        }
-      };
-    }
-    // 6. Airtable
-    else if (tool.includes("airtable")) {
-      module = "airtable:CreateARecord";
-      mapper = {
-        baseId: "BASE_ID",
-        tableId: "TABLE_NAME",
-        fields: {
-          Tache: step.action,
-          Resultat: "{{1.output}}"
-        }
-      };
-    }
-    // 7. Shopify
-    else if (tool.includes("shopify")) {
-      module = "shopify:WatchOrders";
-      mapper = {
-        status: "any"
-      };
-    }
-    // 8. OpenAI / GPT / LLMs
-    else if (tool.includes("openai") || tool.includes("gpt") || tool.includes("gemini") || tool.includes("claude") || tool.includes("deepseek") || tool.includes("ia")) {
-      module = "openai:CreateACompletion";
-      mapper = {
-        model: "gpt-4o",
-        messages: [
-          {
-            role: "system",
-            content: `Ta tâche est : ${step.action}`
-          },
-          {
-            role: "user",
-            content: "{{1.output}}"
-          }
-        ]
-      };
-    }
-    // 9. Twilio
-    else if (tool.includes("twilio") || tool.includes("sms")) {
-      module = "twilio:SendSMS";
-      mapper = {
-        from: "SENDER_NUMBER",
-        to: "RECIPIENT_NUMBER",
-        message: `AURA : {{1.output}}`
-      };
-    }
-    // 10. Google Calendar / Calendrier
-    else if (tool.includes("calendar") || tool.includes("calendrier")) {
-      module = "google-calendar:CreateAnEvent";
-      mapper = {
-        calendarId: "primary",
-        summary: `Rendez-vous AURA : ${step.action.slice(0, 30)}`,
-        description: "{{1.output}}",
-        startDate: "{{now}}",
-        duration: 60
-      };
-    }
-
-    return { module, mapper };
-  };
-
-  const generateN8nWorkflow = (scen) => {
-    const firstStepTool = String(scen.steps[0]?.tool || '').toLowerCase();
-    const firstStepAction = String(scen.steps[0]?.action || '').toLowerCase();
-    
-    const isFirstStepEventDriven = 
-      firstStepTool.includes("webhook") || 
-      firstStepTool.includes("porte") || 
-      firstStepTool.includes("forms") ||
-      firstStepAction.includes("détecter") || 
-      firstStepAction.includes("réceptionner") || 
-      firstStepAction.includes("recevoir") ||
-      firstStepAction.includes("quand") || 
-      firstStepAction.includes("lors de");
-
-    const nodes = [];
-    const connections = {};
-    let previousNodeName = "";
-    let xPosition = 100;
-
-    if (isFirstStepEventDriven) {
-      const triggerPath = `aura-webhook-trigger-${scen.id}`;
-      nodes.push({
-        parameters: {
-          path: triggerPath,
-          options: {}
-        },
-        id: "start-node-id",
-        name: "Déclencheur Webhook AURA",
-        type: "n8n-nodes-base.webhook",
-        typeVersion: 2,
-        position: [xPosition, 300]
-      });
-      previousNodeName = "Déclencheur Webhook AURA";
-      xPosition += 220;
-    } else {
-      nodes.push({
-        parameters: {},
-        id: "start-node-id",
-        name: "Début Scénario AURA",
-        type: "n8n-nodes-base.manualTrigger",
-        typeVersion: 1,
-        position: [xPosition, 300]
-      });
-      previousNodeName = "Début Scénario AURA";
-      xPosition += 220;
-    }
-
-    scen.steps.forEach((step, index) => {
-      const toolName = String(step.tool || '');
-      const nodeName = `${toolName.replace(/[^a-zA-Z0-9\s]/g, '')} - Etape ${index + 1}`;
-      
-      const config = getN8nNodeConfig(step, index);
-
-      nodes.push({
-        parameters: config.parameters,
-        id: `node-${step.id}-${index}`,
-        name: nodeName,
-        type: config.type,
-        typeVersion: config.typeVersion,
-        position: [xPosition, 300]
-      });
-
-      if (!connections[previousNodeName]) {
-        connections[previousNodeName] = {
-          main: [[]]
-        };
-      }
-
-      connections[previousNodeName].main[0].push({
-        node: nodeName,
-        type: "main",
-        index: 0
-      });
-
-      previousNodeName = nodeName;
-      xPosition += 220;
-    });
-
-    return JSON.stringify({ nodes, connections }, null, 2);
-  };
-
-  const generateMakeBlueprint = (scen) => {
-    const flow = scen.steps.map((step, index) => {
-      const config = getMakeModuleConfig(step, index);
-      return {
-        id: index + 1,
-        module: config.module,
-        params: config.mapper,
-        metadata: {
-          designer: {
-            x: index * 150,
-            y: 0
-          }
-        }
-      };
-    });
-    
-    return JSON.stringify({
-      name: `AURA - ${scen.name}`,
-      flow: flow,
-      metadata: {
-        version: 1
-      }
-    }, null, 2);
-  };
+  
 
   // ── Live Execution Panel states ────────────────────────────────────────────
   const [showLiveExecPanel, setShowLiveExecPanel] = useState(false);
@@ -5818,18 +3999,7 @@ L'objet JSON doit respecter rigoureusement cette structure :
   const [liveExecLog, setLiveExecLog] = useState([]);
   const [liveExecSummary, setLiveExecSummary] = useState(null);
 
-  const [scenarioExecutions, setScenarioExecutions] = useState(() => {
-    try {
-      const saved = localStorage.getItem('aura_scenario_executions');
-      return saved ? JSON.parse(saved) : [];
-    } catch (e) {
-      return [];
-    }
-  });
-
-  useEffect(() => {
-    localStorage.setItem('aura_scenario_executions', JSON.stringify(scenarioExecutions));
-  }, [scenarioExecutions]);
+  // scenarioExecutions → now from useScenariosStore
 
   // Helper: detect which API key to use for a given tool name
   const getKeyForTool = (toolName) => {
@@ -6162,7 +4332,7 @@ L'objet JSON doit respecter rigoureusement cette structure :
                   throw new Error(`HTTP ${res.status}`);
                 }
               } catch (e) {
-                const isKeyFormatOk = key.startsWith("n8n_api_") || /^[a-zA-Z0-9_-]{16,}$/.test(key);
+                const isKeyFormatOk = key.startsWith("n8n_api_") || key.startsWith("eyJ") || /^[a-zA-Z0-9_-]{16,}$/.test(key);
                 if (isKeyFormatOk) {
                   stepResult = `Connexion à n8n validée (Signature & URL valides, CORS ou API restreinte). Prêt à exécuter.`;
                   log(`  ✓ n8n : ${stepResult}`);
@@ -6238,96 +4408,7 @@ L'objet JSON doit respecter rigoureusement cette structure :
     }
   };
 
-  const handleLaunchAutomationPipeline = async () => {
-    if (!activeScenario) return;
-    setIsLaunchingAutomation(true);
-    setAutomationError(null);
-
-    const platform = automationPlatform;
-    const generatedCode = platform === 'n8n' 
-      ? generateN8nWorkflow(activeScenario)
-      : generateMakeBlueprint(activeScenario);
-      
-    setAutomationJSON(generatedCode);
-    copyToClipboard(generatedCode);
-    
-    const n8nApiKey = apiKeys["n8n"];
-    const n8nUrl = (apiKeys["n8n_url"] || "").replace(/\/$/, "");
-    const hasValidN8nUrl = n8nUrl && !n8nUrl.includes('localhost') && !n8nUrl.includes('127.0.0.1');
-    
-    if (platform === 'n8n') {
-      // Si pas de clé API n8n : mode copier-coller
-      if (!n8nApiKey || n8nApiKey.trim() === '') {
-        setAutomationError("Clé API n8n non configurée. Le scénario JSON a été copié dans votre presse-papiers. Collez-le (Ctrl+V) dans n8n.");
-        triggerToast("✓ Scénario JSON copié !");
-        setIsLaunchingAutomation(false);
-        setShowAutomationModal(true);
-        // Ouvrir n8n pour aider l'utilisateur
-        window.open(n8nUrl || "http://localhost:5678", "_blank");
-        return;
-      }
-
-      triggerToast("Déploiement automatique sur votre n8n...");
-      try {
-        const parsedWorkflow = JSON.parse(generatedCode);
-        const response = await fetch('/api/n8n-proxy', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            n8nUrl: n8nUrl,
-            apiKey: n8nApiKey,
-            workflow: {
-              name: `[AURA] ${activeScenario.name}`,
-              nodes: parsedWorkflow.nodes,
-              connections: parsedWorkflow.connections,
-              settings: {}
-            }
-          })
-        });
-        
-        if (response.ok) {
-          const resData = await response.json();
-          triggerToast(`✓ Déploiement automatique réussi sur n8n !`);
-          setDeployLogs(prev => [
-            ...prev,
-            `[PROD] Déploiement direct réussi sur n8n.`,
-            `[PROD] Workflow ID : ${resData.id}`
-          ]);
-          if (resData.id) setDeployedWorkflowId(resData.id);
-          if (hasValidN8nUrl) setDeployedWorkflowUrl(`${n8nUrl}/workflow/${resData.id}`);
-          setIsLaunchingAutomation(false);
-          setShowAutomationModal(true);
-          // Ouvrir directement le workflow sur n8n
-          window.open(deployedWorkflowUrl || `${n8nUrl}/workflow/${resData.id}` || n8nUrl, "_blank");
-          return;
-        } else {
-          let errorMsg = "Erreur de configuration ou réseau";
-          try {
-            const errText = await response.text();
-            try { const errJson = JSON.parse(errText); errorMsg = errJson.message || errJson.error || errorMsg; } 
-            catch (_) { errorMsg = errText || errorMsg; }
-          } catch (__) {}
-          console.warn("Direct deploy failed:", errorMsg);
-          setAutomationError(`L'API n8n a retourné une erreur : "${errorMsg}". Le JSON a été copié.`);
-          triggerToast("⚠️ Déploiement direct impossible. Mode manuel activé.");
-        }
-      } catch (e) {
-        console.error("Direct deploy error:", e);
-        setAutomationError(`Proxy injoignable : ${e.message || e}. Le JSON a été copié.`);
-        triggerToast("⚠️ Erreur réseau. Mode manuel activé.");
-      }
-      
-      setIsLaunchingAutomation(false);
-      setShowAutomationModal(true);
-      window.open(n8nUrl || "http://localhost:5678", "_blank");
-      return;
-    }
-    
-    triggerToast("✓ Blueprint Make.com copié !");
-    setIsLaunchingAutomation(false);
-    setShowAutomationModal(true);
-    window.open("https://www.make.com/en/login", "_blank");
-  };
+  
 
     const handleSwitchAutomationPlatform = (platform) => {
 
