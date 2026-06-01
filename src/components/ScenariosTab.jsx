@@ -519,10 +519,24 @@ export default function ScenariosTab({
                         : 'bg-slate-900/40 hover:bg-slate-900/60 border-slate-850'
                     }`}>
                       <div>
-                        <span className="bg-slate-950 border border-slate-800 text-[10px] px-2 py-0.5 rounded font-bold text-indigo-400 uppercase tracking-wide">
-                          {step.tool}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className="bg-slate-950 border border-slate-800 text-[10px] px-2 py-0.5 rounded font-bold text-indigo-400 uppercase tracking-wide">
+                            {step.tool}
+                          </span>
+                          <Sliders className="w-3 h-3 text-slate-500 hover:text-indigo-400 cursor-pointer transition-colors animate-pulse" title="Paramètres disponibles (cliquer pour modifier)" />
+                        </div>
                         <p className="text-slate-300 text-xs font-medium mt-1.5">{step.action}</p>
+                        {step.config && Object.keys(step.config).filter(k => k !== 'apiKey' && k !== 'accessToken' && k !== 'authToken' && k !== 'apiToken').length > 0 && (
+                          <div className="flex items-center gap-1.5 flex-wrap mt-2 font-mono text-[9px] text-slate-500">
+                            <span className="bg-slate-950 px-1 py-0.5 rounded text-[8px] text-indigo-300 font-bold uppercase tracking-wider">Params</span>
+                            <span className="truncate max-w-[320px] md:max-w-md">
+                              {Object.keys(step.config)
+                                .filter(k => k !== 'apiKey' && k !== 'accessToken' && k !== 'authToken' && k !== 'apiToken')
+                                .map(k => `${k}: ${step.config[k]}`)
+                                .join(' | ')}
+                            </span>
+                          </div>
+                        )}
                       </div>
 
                       {/* Steps re-order & Delete */}
@@ -625,9 +639,17 @@ export default function ScenariosTab({
                                 {isSimDone ? '✓' : index + 1}
                               </span>
                             </div>
-                            <p className="text-slate-300 text-[10px] leading-relaxed font-medium line-clamp-3">
+                            <p className="text-slate-300 text-[10px] leading-relaxed font-medium line-clamp-2">
                               {step.action}
                             </p>
+                            {step.config && Object.keys(step.config).filter(k => k !== 'apiKey' && k !== 'accessToken' && k !== 'authToken' && k !== 'apiToken').length > 0 && (
+                              <div className="text-[8px] font-mono text-slate-500 truncate mt-1 bg-slate-950/60 px-1.5 py-0.5 rounded border border-slate-900">
+                                {Object.keys(step.config)
+                                  .filter(k => k !== 'apiKey' && k !== 'accessToken' && k !== 'authToken' && k !== 'apiToken')
+                                  .map(k => `${k}: ${step.config[k]}`)
+                                  .join(' | ')}
+                              </div>
+                            )}
                           </div>
 
                           <div className="flex items-center justify-between border-t border-slate-950 pt-2 mt-2">

@@ -143,6 +143,7 @@ import useApiKeysStore from './stores/useApiKeysStore';
 import useGmbStore from './stores/useGmbStore';
 import useScenariosStore from './stores/useScenariosStore';
 import useClientsStore from './stores/useClientsStore';
+import { getFieldsForTool, getDefaultConfigForTool, normalizeToolName } from './utils/stepConfigs';
 
 // ==========================================
 
@@ -353,13 +354,23 @@ export default function App() {
 
   // States for visual no-code scenario editor
 
-  const [editingStep, setEditingStep] = useState(null); // { id, tool, action, scenarioId }
+  const [editingStep, setEditingStep] = useState<any>(null); // { id, tool, action, scenarioId }
 
-  const [insertStepIndex, setInsertStepIndex] = useState(null); // number index inside activeScenario
+  const [insertStepIndex, setInsertStepIndex] = useState<any>(null); // number index inside activeScenario
 
   const [modalToolInput, setModalToolInput] = useState('');
 
   const [modalActionInput, setModalActionInput] = useState('');
+
+  const [modalConfigInput, setModalConfigInput] = useState<any>({});
+
+  React.useEffect(() => {
+    if (editingStep) {
+      setModalConfigInput(editingStep.config || getDefaultConfigForTool(editingStep.tool, editingStep.action));
+    } else {
+      setModalConfigInput({});
+    }
+  }, [editingStep]);
 
   // updateStepContent, insertStepAtIndex, reorderSteps → now from useScenariosStore
 
@@ -1243,6 +1254,207 @@ Restons en contact pour configurer votre essai gratuit de 14 jours !`;
 
   };
 
+  const executeScenarioStepReal = async (step: any, review: any) => {
+    const toolNormalized = step.tool.toLowerCase();
+    
+    // Get the API key for this tool: either from step config or global store
+    const stepKey = step.config?.apiKey || step.config?.apiToken || step.config?.accessToken || step.config?.authToken;
+    const globalKey = apiKeys[step.tool] || apiKeys[normalizeToolName(step.tool)];
+    const activeKey = (stepKey || globalKey || "").trim();
+
+    // 1. LLMs (Gemini, Claude, OpenAI, DeepSeek, Groq)
+    if (toolNormalized.includes('gemini') || toolNormalized.includes('claude') || toolNormalized.includes('openai') || toolNormalized.includes('gpt') || toolNormalized.includes('deepseek') || toolNormalized.includes('groq')) {
+      if (!activeKey) {
+        // Fallback to simulation/mock if no key is configured
+        setReviewExecutionLogs(prev => [...prev, `[SIMULATION] Pas de clé API pour ${step.tool}. Exécution fictive.`]);
+        await new Promise(r => setTimeout(r, 800));
+        return;
+      }
+
+      setReviewExecutionLogs(prev => [...prev, `[API] Appel en cours de l'API ${step.tool}...`]);
+
+      const systemPrompt = step.config?.systemPrompt || "Tu es un agent autonome.";
+      const userPrompt = `Action requise: ${step.action}\nAvis du client: ${review.author} (${review.rating}/5) - "${review.text}"`;
+
+      let responseText = "";
+      if (toolNormalized.includes('gemini')) {
+        responseText = await callGeminiServiceAPI(userPrompt, systemPrompt, activeKey, selectedGeminiModel);
+      } else if (toolNormalized.includes('claude') || toolNormalized.includes('anthropic')) {
+        const res = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: {
+            "x-api-key": activeKey,
+            "anthropic-version": "2023-06-01",
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            model: step.config?.model || "claude-3-5-sonnet",
+            max_tokens: 150,
+            messages: [{ role: "user", content: userPrompt }],
+            system: systemPrompt
+          })
+        });
+        if (res.ok) {
+          const json = await res.json();
+          responseText = json.content?.[0]?.text || "";
+        } else {
+          throw new Error(`Claude API Error: ${res.status}`);
+        }
+      } else {
+        // OpenAI / DeepSeek / Groq (OpenAI-compatible)
+        let baseUrl = "https://api.openai.com/v1";
+        let defaultModel = "gpt-4o";
+        if (toolNormalized.includes('deepseek')) {
+          baseUrl = "https://api.deepseek.com";
+          defaultModel = "deepseek-chat";
+        } else if (toolNormalized.includes('groq')) {
+          baseUrl = "https://api.groq.com/openai/v1";
+          defaultModel = "llama-3.3-70b-versatile";
+        }
+
+        const res = await fetch(`${baseUrl}/chat/completions`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${activeKey}`
+          },
+          body: JSON.stringify({
+            model: step.config?.model || defaultModel,
+            messages: [
+              { role: "system", content: systemPrompt },
+              { role: "user", content: userPrompt }
+            ],
+            temperature: step.config?.temperature ?? 0.5
+          })
+        });
+
+        if (res.ok) {
+          const json = await res.json();
+          responseText = json.choices?.[0]?.message?.content || "";
+        } else {
+          throw new Error(`${step.tool} API Error: ${res.status}`);
+        }
+      }
+
+      setReviewExecutionLogs(prev => [...prev, `[API SUCCESS] Réponse reçue : "${responseText.substring(0, 100)}..."`]);
+    }
+    
+    // 2. Integration flows (Slack, Make, Zapier, Activepieces, n8n)
+    else if (toolNormalized.includes('slack') || toolNormalized.includes('mou') || toolNormalized.includes('make') || toolNormalized.includes('zapier') || toolNormalized.includes('activepieces') || toolNormalized.includes('n8n')) {
+      const webhookUrl = step.config?.webhookUrl || (toolNormalized.includes('slack') ? apiKeys['slack'] : '');
+      if (!webhookUrl) {
+        setReviewExecutionLogs(prev => [...prev, `[SIMULATION] Webhook non configuré pour ${step.tool}. Exécution fictive.`]);
+        await new Promise(r => setTimeout(r, 800));
+        return;
+      }
+
+      setReviewExecutionLogs(prev => [...prev, `[API] Envoi de la requête au Webhook de ${step.tool}...`]);
+
+      const payload = {
+        event: "review_received",
+        action: step.action,
+        scenarioName: activeScenario.name,
+        review: {
+          author: review.author,
+          rating: review.rating,
+          text: review.text,
+          sentiment: review.sentiment
+        },
+        message: step.config?.message || `Nouvel avis client de ${review.author} : ${review.text}`
+      };
+
+      const res = await fetch(webhookUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+
+      if (res.ok) {
+        setReviewExecutionLogs(prev => [...prev, `[API SUCCESS] Webhook envoyé avec succès (HTTP ${res.status}).`]);
+      } else {
+        throw new Error(`Erreur webhook ${step.tool} (HTTP ${res.status})`);
+      }
+    }
+
+    // 3. HTTP Tool
+    else if (toolNormalized === 'http') {
+      const url = step.config?.url;
+      if (!url) {
+        setReviewExecutionLogs(prev => [...prev, `[SIMULATION] URL HTTP non configurée. Exécution fictive.`]);
+        await new Promise(r => setTimeout(r, 800));
+        return;
+      }
+
+      setReviewExecutionLogs(prev => [...prev, `[API] Envoi de la requête HTTP vers ${url}...`]);
+
+      let headers = {};
+      try {
+        if (step.config?.headers) {
+          headers = JSON.parse(step.config.headers);
+        }
+      } catch (e) {
+        setReviewExecutionLogs(prev => [...prev, `[WARNING] En-têtes HTTP malformés (JSON invalide).`]);
+      }
+
+      const res = await fetch(url, {
+        method: step.config?.method || 'POST',
+        headers: { "Content-Type": "application/json", ...headers },
+        body: step.config?.body ? step.config.body : undefined
+      });
+
+      if (res.ok) {
+        setReviewExecutionLogs(prev => [...prev, `[API SUCCESS] Requête HTTP réussie (HTTP ${res.status}).`]);
+      } else {
+        throw new Error(`Erreur HTTP (HTTP ${res.status})`);
+      }
+    }
+
+    // 4. ElevenLabs TTS
+    else if (toolNormalized.includes('elevenlabs')) {
+      if (!activeKey) {
+        setReviewExecutionLogs(prev => [...prev, `[SIMULATION] Clé ElevenLabs manquante. Exécution fictive.`]);
+        await new Promise(r => setTimeout(r, 800));
+        return;
+      }
+
+      setReviewExecutionLogs(prev => [...prev, `[API] Synthèse vocale ElevenLabs en cours...`]);
+      const textToSpeak = `Nouveau retour client de ${review.author} avec une note de ${review.rating} étoiles sur cinq.`;
+      const voiceId = step.config?.voiceId || 'Rachel';
+      const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "xi-api-key": activeKey
+        },
+        body: JSON.stringify({
+          text: textToSpeak,
+          model_id: "eleven_monolingual_v1",
+          voice_settings: {
+            stability: step.config?.stability ?? 0.75,
+            similarity_boost: step.config?.similarity ?? 0.85
+          }
+        })
+      });
+
+      if (res.ok) {
+        const audioBlob = await res.blob();
+        const audioUrl = URL.createObjectURL(audioBlob);
+        const audio = new Audio(audioUrl);
+        audio.play();
+        setReviewExecutionLogs(prev => [...prev, `[API SUCCESS] Synthèse vocale terminée et jouée.`]);
+      } else {
+        throw new Error(`ElevenLabs API Error: ${res.status}`);
+      }
+    }
+
+    // 5. Default Mock for other tools
+    else {
+      setReviewExecutionLogs(prev => [...prev, `[SIMULATION] Traitement de l'étape par ${step.tool}...`]);
+      await new Promise(r => setTimeout(r, 1000));
+      setReviewExecutionLogs(prev => [...prev, `✓ Traitement ${step.tool} terminé.`]);
+    }
+  };
+
   const handleExecuteScenarioOnReview = async (review) => {
 
     const activeProf = gmbProfiles.find(p => p.id === activeProfileId);
@@ -1293,17 +1505,19 @@ Restons en contact pour configurer votre essai gratuit de 14 jours !`;
 
       setReviewExecutionProgress(Math.floor((i / steps.length) * 100));
 
-      await new Promise(r => setTimeout(r, 900));
-
-      
-
-      setReviewExecutionLogs(prev => [
-
-        ...prev,
-
-        `✓ Étape ${i + 1} terminée avec succès.`
-
-      ]);
+      try {
+        await executeScenarioStepReal(step, review);
+        setReviewExecutionLogs(prev => [
+          ...prev,
+          `✓ Étape ${i + 1} terminée avec succès.`
+        ]);
+      } catch (err: any) {
+        setReviewExecutionLogs(prev => [
+          ...prev,
+          `⚠️ Échec étape ${i + 1} (${step.tool}) : ${err.message || err}. Passage en mode simulation.`
+        ]);
+        await new Promise(r => setTimeout(r, 1000));
+      }
 
     }
 
@@ -6342,7 +6556,7 @@ L'objet JSON doit respecter rigoureusement cette structure :
 
       {editingStep && (
 
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-955/80 backdrop-blur-sm p-4">
 
           <div className="glass-card w-full max-w-md p-6 rounded-2xl border border-slate-800 shadow-2xl relative space-y-4">
 
@@ -6378,7 +6592,11 @@ L'objet JSON doit respecter rigoureusement cette structure :
 
                   value={modalToolInput}
 
-                  onChange={(e) => setModalToolInput(e.target.value)}
+                  onChange={(e) => {
+                    const newTool = e.target.value;
+                    setModalToolInput(newTool);
+                    setModalConfigInput(getDefaultConfigForTool(newTool, modalActionInput));
+                  }}
 
                   className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3.5 py-2.5 text-slate-200 focus:outline-none focus:ring-1 focus:ring-indigo-500/50"
 
@@ -6404,7 +6622,11 @@ L'objet JSON doit respecter rigoureusement cette structure :
 
                     placeholder="Saisissez le nom de l'outil..."
 
-                    onChange={(e) => setModalToolInput(e.target.value)}
+                    onChange={(e) => {
+                      const newTool = e.target.value;
+                      setModalToolInput(newTool);
+                      setModalConfigInput(getDefaultConfigForTool(newTool, modalActionInput));
+                    }}
 
                     className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3.5 py-2.5 text-slate-200 mt-2 focus:outline-none focus:ring-1 focus:ring-indigo-500/50"
 
@@ -6447,6 +6669,67 @@ L'objet JSON doit respecter rigoureusement cette structure :
 
               </div>
 
+              {/* Paramètres No-Code du Module */}
+              {(() => {
+                const configFields = getFieldsForTool(modalToolInput);
+                if (configFields.length === 0) return null;
+                return (
+                  <div className="border-t border-slate-850 pt-3.5 space-y-3">
+                    <span className="text-[10px] text-indigo-400 font-bold uppercase tracking-wider block">Configuration du Module</span>
+                    <div className="grid grid-cols-1 gap-3 max-h-60 overflow-y-auto pr-1 scrollbar-thin">
+                      {configFields.map((field) => {
+                        const val = modalConfigInput[field.key] !== undefined ? modalConfigInput[field.key] : field.defaultValue;
+                        return (
+                          <div key={field.key} className="space-y-1">
+                            <label className="block text-slate-400 font-bold uppercase text-[9px]">{field.label}</label>
+                            {field.type === 'select' ? (
+                              <select
+                                value={val}
+                                onChange={(e) => setModalConfigInput((prev: any) => ({ ...prev, [field.key]: e.target.value }))}
+                                className="w-full bg-slate-950 border border-slate-850 rounded-xl px-3.5 py-2.5 text-slate-200 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500/50"
+                              >
+                                {field.options?.map((opt) => (
+                                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                ))}
+                              </select>
+                            ) : field.type === 'textarea' ? (
+                              <textarea
+                                value={val}
+                                onChange={(e) => setModalConfigInput((prev: any) => ({ ...prev, [field.key]: e.target.value }))}
+                                rows={2}
+                                className="w-full bg-slate-950 border border-slate-855 rounded-xl px-3.5 py-2 text-slate-200 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500/50 resize-none"
+                              />
+                            ) : field.type === 'password' ? (
+                              <input
+                                type="password"
+                                value={val}
+                                onChange={(e) => setModalConfigInput((prev: any) => ({ ...prev, [field.key]: e.target.value }))}
+                                className="w-full bg-slate-955 border border-slate-855 rounded-xl px-3.5 py-2 text-slate-200 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500/50"
+                                placeholder="Laisser vide pour utiliser la clé globale..."
+                              />
+                            ) : field.type === 'number' ? (
+                              <input
+                                type="number"
+                                value={val}
+                                onChange={(e) => setModalConfigInput((prev: any) => ({ ...prev, [field.key]: Number(e.target.value) }))}
+                                className="w-full bg-slate-955 border border-slate-855 rounded-xl px-3.5 py-2 text-slate-200 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500/50"
+                              />
+                            ) : (
+                              <input
+                                type="text"
+                                value={val}
+                                onChange={(e) => setModalConfigInput((prev: any) => ({ ...prev, [field.key]: e.target.value }))}
+                                className="w-full bg-slate-955 border border-slate-855 rounded-xl px-3.5 py-2 text-slate-200 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500/50"
+                              />
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })()}
+
             </div>
 
             <div className="flex gap-3 pt-2">
@@ -6467,7 +6750,7 @@ L'objet JSON doit respecter rigoureusement cette structure :
 
                 onClick={() => {
 
-                  updateStepContent(editingStep.scenarioId, editingStep.id, modalToolInput, modalActionInput);
+                  updateStepContent(editingStep.scenarioId, editingStep.id, modalToolInput, modalActionInput, modalConfigInput);
 
                   setEditingStep(null);
 

@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { getDefaultConfigForTool } from '../utils/stepConfigs';
 
 /**
  * Validates and cleans a scenario object, ensuring it has the expected shape.
@@ -16,6 +17,7 @@ function cleanScenario(scenario) {
           id: step.id ?? '',
           tool: step.tool ?? '',
           action: step.action ?? '',
+          config: step.config ?? getDefaultConfigForTool(step.tool ?? '', step.action ?? ''),
         }))
       : [],
   };
@@ -99,14 +101,14 @@ const useScenariosStore = create(
        * @param {string} tool       - New tool value
        * @param {string} action     - New action value
        */
-      updateStepContent: (scenarioId, stepId, tool, action) =>
+      updateStepContent: (scenarioId, stepId, tool, action, config) =>
         set((state) => ({
           scenarios: state.scenarios.map((scenario) => {
             if (scenario.id !== scenarioId) return scenario;
             return {
               ...scenario,
               steps: scenario.steps.map((step) =>
-                step.id === stepId ? { ...step, tool, action } : step,
+                step.id === stepId ? { ...step, tool, action, config: config ?? step.config ?? getDefaultConfigForTool(tool, action) } : step,
               ),
             };
           }),
@@ -123,7 +125,12 @@ const useScenariosStore = create(
         set((state) => ({
           scenarios: state.scenarios.map((scenario) => {
             if (scenario.id !== scenarioId) return scenario;
-            const newStep = { id: generateStepId(), tool, action };
+            const newStep = {
+              id: generateStepId(),
+              tool,
+              action,
+              config: getDefaultConfigForTool(tool, action)
+            };
             const steps = [...scenario.steps];
             const clampedIndex = Math.max(
               0,
