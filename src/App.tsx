@@ -409,6 +409,168 @@ export default function App() {
   const [simEfficiency, setSimEfficiency] = useState(null);
 
   // keyConfigMethod, handleUpdateKeyMethod → now from useApiKeysStore
+  
+  const [stepExecutionResults, setStepExecutionResults] = useState<Record<string, { status: 'idle' | 'running' | 'success' | 'error', output?: string, error?: string }>>({});
+
+  const handleTestSingleStep = async (scenarioId: string, stepId: string) => {
+    const scenario = scenarios.find(s => s.id === scenarioId);
+    if (!scenario) return;
+    const step = scenario.steps.find(s => s.id === stepId);
+    if (!step) return;
+
+    setStepExecutionResults(prev => ({
+      ...prev,
+      [stepId]: { status: 'running' }
+    }));
+
+    // Mock review context for testing individual nodes
+    const mockReview = {
+      id: "mock-test-id",
+      author: "Jean Dupont",
+      rating: 4,
+      text: "Super boulangerie, accueil chaleureux et croissants délicieux !",
+      sentiment: "positive",
+      time: "Il y a 5 min"
+    };
+
+    try {
+      const toolNormalized = step.tool.toLowerCase();
+      const stepKey = step.config?.apiKey || step.config?.apiToken || step.config?.accessToken || step.config?.authToken;
+      const globalKey = apiKeys[step.tool] || apiKeys[normalizeToolName(step.tool)];
+      const activeKey = (stepKey || globalKey || "").trim();
+
+      let output = "";
+      
+      if (toolNormalized.includes('gemini') || toolNormalized.includes('claude') || toolNormalized.includes('openai') || toolNormalized.includes('gpt') || toolNormalized.includes('deepseek') || toolNormalized.includes('groq')) {
+        const systemPrompt = step.config?.systemPrompt || "Tu es un agent de test.";
+        const userPrompt = `Action: ${step.action}\nContexte: Avis de ${mockReview.author} - "${mockReview.text}"`;
+        
+        if (!activeKey) {
+          output = `[SIMULATION OUTPUT] Réponse simulée pour ${step.tool} : "Merci pour votre retour positif ! Nous sommes ravis que les croissants vous plaisent."`;
+          await new Promise(r => setTimeout(r, 1200));
+        } else {
+          if (toolNormalized.includes('gemini')) {
+            output = await callGeminiServiceAPI(userPrompt, systemPrompt, activeKey);
+          } else if (toolNormalized.includes('claude') || toolNormalized.includes('anthropic')) {
+            const res = await fetch("https://api.anthropic.com/v1/messages", {
+              method: "POST",
+              headers: { "x-api-key": activeKey, "anthropic-version": "2023-06-01", "Content-Type": "application/json" },
+              body: JSON.stringify({
+                model: step.config?.model || "claude-3-5-sonnet",
+                max_tokens: 150,
+                messages: [{ role: "user", content: userPrompt }],
+                system: systemPrompt
+              })
+            });
+            if (res.ok) {
+              const json = await res.json();
+              output = json.content?.[0]?.text || "";
+            } else {
+              throw new Error(`Claude API Error (HTTP ${res.status})`);
+            }
+          } else {
+            let baseUrl = "https://api.openai.com/v1";
+            let defaultModel = "gpt-4o";
+            if (toolNormalized.includes('deepseek')) {
+              baseUrl = "https://api.deepseek.com";
+              defaultModel = "deepseek-chat";
+            } else if (toolNormalized.includes('groq')) {
+              baseUrl = "https://api.groq.com/openai/v1";
+              defaultModel = "llama-3.3-70b-versatile";
+            }
+            const res = await fetch(`${baseUrl}/chat/completions`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json", "Authorization": `Bearer ${activeKey}` },
+              body: JSON.stringify({
+                model: step.config?.model || defaultModel,
+                messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userPrompt }]
+              })
+            });
+            if (res.ok) {
+              const json = await res.json();
+              output = json.choices?.[0]?.message?.content || "";
+            } else {
+              throw new Error(`${step.tool} API Error (HTTP ${res.status})`);
+            }
+          }
+        }
+      } else if (toolNormalized.includes('slack') || toolNormalized.includes('mou') || toolNormalized.includes('make') || toolNormalized.includes('zapier') || toolNormalized.includes('activepieces') || toolNormalized.includes('n8n')) {
+        const webhookUrl = step.config?.webhookUrl || (toolNormalized.includes('slack') ? apiKeys['slack'] : '');
+        if (!webhookUrl) {
+          output = `[SIMULATION Webhook] Requête HTTP POST simulée vers ${step.tool}. Payload: {"action": "${step.action}"}`;
+          await new Promise(r => setTimeout(r, 1000));
+        } else {
+          const payload = {
+            event: "test_node",
+            action: step.action,
+            review: mockReview,
+            message: step.config?.message || `Test n8n node execution: ${step.action}`
+          };
+          const res = await fetch(webhookUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+          });
+          if (res.ok) {
+            output = `[API SUCCESS] Requête envoyée avec succès au webhook (HTTP ${res.status})`;
+          } else {
+            throw new Error(`Webhook Error (HTTP ${res.status})`);
+          }
+        }
+      } else if (toolNormalized === 'http') {
+        const url = step.config?.url;
+        if (!url) {
+          output = `[SIMULATION HTTP] Requête simulée. Configurez l'URL pour faire un vrai appel.`;
+          await new Promise(r => setTimeout(r, 1000));
+        } else {
+          let headers = {};
+          if (step.config?.headers) headers = JSON.parse(step.config.headers);
+          const res = await fetch(url, {
+            method: step.config?.method || 'POST',
+            headers: { "Content-Type": "application/json", ...headers },
+            body: step.config?.body
+          });
+          if (res.ok) {
+            output = await res.text();
+          } else {
+            throw new Error(`HTTP Error (HTTP ${res.status})`);
+          }
+        }
+      } else if (toolNormalized.includes('elevenlabs')) {
+        if (!activeKey) {
+          output = `[SIMULATION ElevenLabs] TTS joué (Rachel) : "Test de l'étape ElevenLabs réussi !"`;
+          await new Promise(r => setTimeout(r, 1200));
+        } else {
+          const voiceId = step.config?.voiceId || 'Rachel';
+          const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "xi-api-key": activeKey },
+            body: JSON.stringify({ text: "Test de node réussi", model_id: "eleven_monolingual_v1" })
+          });
+          if (res.ok) {
+            output = `[API SUCCESS] Synthèse audio ElevenLabs jouée.`;
+          } else {
+            throw new Error(`ElevenLabs Error (HTTP ${res.status})`);
+          }
+        }
+      } else {
+        output = `[SIMULATION] Traitement de l'outil ${step.tool} simulé avec succès.`;
+        await new Promise(r => setTimeout(r, 1000));
+      }
+
+      setStepExecutionResults(prev => ({
+        ...prev,
+        [stepId]: { status: 'success', output }
+      }));
+      triggerToast(`Étape "${step.tool}" testée avec succès !`);
+    } catch (err: any) {
+      setStepExecutionResults(prev => ({
+        ...prev,
+        [stepId]: { status: 'error', error: err.message || String(err) }
+      }));
+      triggerToast(`Échec du test de l'étape : ${err.message || err}`, "error");
+    }
+  };
 
   const [googleSSOPendingTool, setGoogleSSOPendingTool] = useState(null);
 
@@ -5386,6 +5548,10 @@ L'objet JSON doit respecter rigoureusement cette structure :
             scenarioExecutions={scenarioExecutions}
 
             setScenarioExecutions={setScenarioExecutions}
+
+            stepExecutionResults={stepExecutionResults}
+
+            handleTestSingleStep={handleTestSingleStep}
 
           />
 

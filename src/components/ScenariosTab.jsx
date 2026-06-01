@@ -83,7 +83,9 @@ export default function ScenariosTab({
   liveExecSteps,
   liveExecLog,
   scenarioExecutions,
-  setScenarioExecutions
+  setScenarioExecutions,
+  stepExecutionResults = {},
+  handleTestSingleStep
 }) {
   const [selectedHistoricalExec, setSelectedHistoricalExec] = useState(null);
   return (
@@ -584,10 +586,57 @@ export default function ScenariosTab({
                   }
                 `}</style>
                 <div className="overflow-x-auto flex items-center gap-6 py-6 px-4 bg-slate-950/40 border border-slate-850 rounded-2xl relative min-h-[280px] scrollbar-thin scrollbar-thumb-indigo-500/20 scrollbar-track-transparent">
+                  {/* Visual Trigger Node (n8n Start Trigger) */}
+                  {activeScenario?.steps?.length > 0 && (
+                    <React.Fragment>
+                      <div className="w-52 shrink-0 p-4 border border-emerald-500/30 bg-emerald-950/15 rounded-2xl flex flex-col justify-between h-[160px] relative shadow-lg shadow-emerald-500/5">
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-1.5">
+                            <div className="w-5 h-5 rounded-full bg-emerald-500 flex items-center justify-center shrink-0">
+                              <Zap className="w-3 h-3 text-slate-950 fill-current" />
+                            </div>
+                            <span className="text-[9px] font-bold text-emerald-400 uppercase tracking-wider">Trigger</span>
+                          </div>
+                          <h4 className="text-white text-xs font-bold mt-1">Avis Google Maps Reçu</h4>
+                          <p className="text-[10px] text-slate-450 leading-relaxed">Déclenche automatiquement ce workflow à chaque avis détecté.</p>
+                        </div>
+                        <div className="text-[8px] font-mono text-emerald-500/80 bg-emerald-950/40 px-1.5 py-0.5 rounded border border-emerald-900/50 self-start">
+                          status: actif
+                        </div>
+                        
+                        {/* Output Port */}
+                        <div className="absolute right-0 top-1/2 translate-x-1/2 -translate-y-1/2 w-3.5 h-3.5 bg-slate-950 border border-emerald-500 rounded-full z-10 flex items-center justify-center">
+                          <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full" />
+                        </div>
+                      </div>
+
+                      {/* Connective Line from Trigger to First Step */}
+                      <div className="flex items-center justify-center shrink-0 w-10 relative h-14">
+                        <svg className="w-full h-5" viewBox="0 0 40 24" fill="none">
+                          <path
+                            d="M0 12h32"
+                            stroke="#10b981"
+                            strokeWidth="2.5"
+                            strokeLinecap="round"
+                          />
+                          <path
+                            d="M28 8l4 4-4 4"
+                            stroke="#10b981"
+                            strokeWidth="2.5"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                      </div>
+                    </React.Fragment>
+                  )}
+
                   {(activeScenario?.steps || []).filter(Boolean).map((step, index) => {
                     const isSimCurrent = isSimulating && index === simCurrentStep;
                     const isSimDone = isSimulating && index < simCurrentStep;
                     const config = getToolIconConfig(step.tool);
+                    const testResult = stepExecutionResults[step.id];
+                    
                     return (
                       <React.Fragment key={step.id}>
                         {/* Step Node Card */}
@@ -603,21 +652,25 @@ export default function ScenariosTab({
                               reorderSteps(activeScenario.id, fromIdx, toIdx);
                             }
                           }}
-                          onClick={() => {
-                            if (isSimulating) return;
-                            setEditingStep({ ...step, scenarioId: activeScenario.id });
-                            setModalToolInput(step.tool);
-                            setModalActionInput(step.action);
-                          }}
-                          className={`w-56 shrink-0 p-4 border rounded-2xl transition-all duration-300 flex flex-col justify-between h-[160px] relative cursor-grab active:cursor-grabbing group hover:border-indigo-500/50 hover:shadow-lg hover:shadow-indigo-500/5 ${
+                          className={`w-60 shrink-0 p-4 border rounded-2xl transition-all duration-300 flex flex-col justify-between min-h-[160px] relative cursor-grab active:cursor-grabbing group hover:border-indigo-500/50 hover:shadow-lg hover:shadow-indigo-500/5 ${
                             isSimCurrent
                               ? 'bg-indigo-950/30 border-indigo-500 shadow-lg shadow-indigo-500/10 text-white scale-[1.02]'
                               : isSimDone
-                              ? 'bg-slate-900/60 border-slate-850 opacity-60'
+                              ? 'bg-slate-900/60 border-slate-855 opacity-60'
                               : 'bg-slate-900/40 border-slate-850 hover:bg-slate-900/60 hover:border-slate-800'
                           }`}
                         >
-                          <div className="space-y-2 overflow-hidden">
+                          {/* Input Port */}
+                          <div className="absolute left-0 top-1/2 -translate-x-1/2 -translate-y-1/2 w-3.5 h-3.5 bg-slate-950 border border-slate-700 rounded-full z-10 flex items-center justify-center group-hover:border-indigo-500 transition-colors">
+                            <div className="w-1.5 h-1.5 bg-slate-800 group-hover:bg-indigo-500 rounded-full transition-colors" />
+                          </div>
+
+                          {/* Output Port */}
+                          <div className="absolute right-0 top-1/2 translate-x-1/2 -translate-y-1/2 w-3.5 h-3.5 bg-slate-950 border border-slate-700 rounded-full z-10 flex items-center justify-center group-hover:border-indigo-500 transition-colors">
+                            <div className="w-1.5 h-1.5 bg-slate-800 group-hover:bg-indigo-500 rounded-full transition-colors" />
+                          </div>
+
+                          <div className="space-y-2 overflow-hidden pb-2">
                             <div className="flex items-center justify-between">
                               <div className="flex items-center gap-1.5 overflow-hidden max-w-[80%] animate-fadeIn">
                                 <div className={`w-6 h-6 rounded-full bg-gradient-to-tr ${config.color} p-0.5 flex items-center justify-center shrink-0`}>
@@ -650,12 +703,60 @@ export default function ScenariosTab({
                                   .join(' | ')}
                               </div>
                             )}
+
+                            {/* Node Test Execution results inside the card (n8n look) */}
+                            {testResult && (
+                              <div className="mt-2 text-[8px] border-t border-slate-855 pt-1.5 space-y-1">
+                                <div className="flex items-center justify-between font-bold">
+                                  <span className="text-slate-400 uppercase tracking-wider">Statut Node:</span>
+                                  {testResult.status === 'running' && (
+                                    <span className="text-indigo-400 flex items-center gap-1 animate-pulse">
+                                      <Loader className="w-2.5 h-2.5 animate-spin" /> Exécution...
+                                    </span>
+                                  )}
+                                  {testResult.status === 'success' && (
+                                    <span className="text-emerald-400 flex items-center gap-0.5 font-bold">
+                                      <Check className="w-2.5 h-2.5" /> Succès (HTTP 200)
+                                    </span>
+                                  )}
+                                  {testResult.status === 'error' && (
+                                    <span className="text-rose-400 font-bold">
+                                      ⚠️ Erreur
+                                    </span>
+                                  )}
+                                </div>
+                                {testResult.status === 'success' && testResult.output && (
+                                  <div className="bg-slate-955 p-1 rounded font-mono text-[7px] text-slate-350 max-h-12 overflow-y-auto leading-relaxed border border-slate-850 select-all" title="Clic pour sélectionner le texte">
+                                    {testResult.output}
+                                  </div>
+                                )}
+                                {testResult.status === 'error' && testResult.error && (
+                                  <div className="bg-rose-950/20 text-rose-300 p-1 rounded font-mono text-[7px] max-h-12 overflow-y-auto border border-rose-900/30">
+                                    {testResult.error}
+                                  </div>
+                                )}
+                              </div>
+                            )}
                           </div>
 
                           <div className="flex items-center justify-between border-t border-slate-950 pt-2 mt-2">
                             <span className="text-[9px] font-semibold text-slate-550">Étape {index + 1}</span>
                             
                             <div className="flex items-center gap-1">
+                              {/* n8n Node Mini Execution Play Trigger */}
+                              <button
+                                onClick={(e) => { e.stopPropagation(); handleTestSingleStep(activeScenario.id, step.id); }}
+                                disabled={isSimulating || (testResult && testResult.status === 'running')}
+                                className="p-1 rounded bg-indigo-950/40 border border-indigo-900/40 hover:bg-indigo-600 hover:text-white text-indigo-350 transition-all cursor-pointer"
+                                title="Exécuter ce node uniquement (façon n8n)"
+                              >
+                                {testResult && testResult.status === 'running' ? (
+                                  <Loader className="w-3 h-3 animate-spin text-indigo-400" />
+                                ) : (
+                                  <Play className="w-3 h-3 fill-current" />
+                                )}
+                              </button>
+
                               <button
                                 onClick={(e) => { e.stopPropagation(); moveStep(activeScenario.id, index, 'up'); }}
                                 disabled={index === 0}
